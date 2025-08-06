@@ -1,6 +1,5 @@
 @CommentToGame_HostAddress = http://localhost:5201
 
-GET {{CommentToGame_HostAddress}}/weatherforecast/
-Accept: application/json
+
 
 ###

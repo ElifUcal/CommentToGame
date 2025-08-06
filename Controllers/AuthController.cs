@@ -8,6 +8,7 @@ using CommentToGame.Models;
 using CommentToGame.Data;
 using CommentToGame.Dtos;
 using Microsoft.AspNetCore.Authorization;
+using System.Security.Cryptography;
 
 
 namespace CommentToGame.Controllers;
@@ -57,8 +58,41 @@ public class AuthController : ControllerBase
             return BadRequest("Şifre yanlış.");
 
         string token = CreateToken(user);
-        return Ok(new { token });
+        string refreshToken = GenerateRefreshToken();
+
+        user.RefreshToken = refreshToken;
+        user.RefreshTokenExpiryTime = DateTime.UtcNow.AddDays(7);
+
+
+        await _context.SaveChangesAsync();
+
+        return Ok(new { token, refreshToken });
+
     }
+
+    
+    [HttpPost("refresh-token")]
+    public async Task<IActionResult> RefreshToken([FromBody] RefreshTokenRequest request)
+    {
+        var user = await _context.Users.FirstOrDefaultAsync(u => u.RefreshToken == request.RefreshToken);
+        if (user == null || user.RefreshTokenExpiryTime < DateTime.UtcNow)
+            return Unauthorized("Geçersiz veya süresi dolmuş refresh token.");
+
+        string newAccessToken = CreateToken(user);
+        string newRefreshToken = GenerateRefreshToken();
+
+        user.RefreshToken = newRefreshToken;
+       int refreshExpireDays = int.TryParse(_config["Jwt:RefreshTokenExpireDays"], out var rDays) ? rDays : 7;
+        user.RefreshTokenExpiryTime = DateTime.UtcNow.AddDays(refreshExpireDays);
+
+
+        await _context.SaveChangesAsync();
+
+        return Ok(new { token = newAccessToken, refreshToken = newRefreshToken });
+    }
+
+
+
 
     private string CreateToken(User user)
     {
@@ -71,11 +105,24 @@ public class AuthController : ControllerBase
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_config["Jwt:Key"]));
         var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
 
+     int expireDays = int.TryParse(_config["Jwt:ExpireDays"], out var days) ? days : 1;
+
+
         var token = new JwtSecurityToken(
             claims: claims,
-            expires: DateTime.Now.AddDays(30), //Burada token süresini uzattık çıkış yapmadan çıkış yapmıycak token unutulmayacak
+            expires: DateTime.Now.AddDays(expireDays), //Burada token süresini uzattık çıkış yapmadan çıkış yapmıycak token unutulmayacak
             signingCredentials: creds);
 
         return new JwtSecurityTokenHandler().WriteToken(token);
     }
+
+    private string GenerateRefreshToken()
+    {
+        var randomBytes = new byte[64];
+        using var rng = RandomNumberGenerator.Create();
+        rng.GetBytes(randomBytes);
+        return Convert.ToBase64String(randomBytes);
+    }
+
+
 }
