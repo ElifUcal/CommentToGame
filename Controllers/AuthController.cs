@@ -1,15 +1,13 @@
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.IdentityModel.Tokens;
+using Microsoft.AspNetCore.Authorization;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
+using System.Security.Cryptography;
 using System.Text;
-using CommentToGame.Models;
 using CommentToGame.Data;
 using CommentToGame.Dtos;
-using Microsoft.AspNetCore.Authorization;
-using System.Security.Cryptography;
-
+using CommentToGame.Models;
+using Microsoft.IdentityModel.Tokens;
 
 namespace CommentToGame.Controllers;
 
@@ -17,112 +15,104 @@ namespace CommentToGame.Controllers;
 [Route("api/[controller]")]
 public class AuthController : ControllerBase
 {
-    private readonly AppDbContext _context;
+    private readonly IUserRepository _users;
     private readonly IConfiguration _config;
 
-    public AuthController(AppDbContext context, IConfiguration config)
+    public AuthController(IUserRepository users, IConfiguration config)
     {
-        _context = context;
+        _users = users;
         _config = config;
     }
 
     [HttpPost("register")]
     public async Task<IActionResult> Register([FromBody] UserDto request)
     {
-        if (await _context.Users.AnyAsync(u => u.UserName == request.UserName || u.Email == request.Email))
+        if (await _users.ExistsByUserNameOrEmail(request.UserName, request.Email))
             return BadRequest("Bu kullanıcı adı veya email zaten var.");
 
         var user = new User
         {
             UserName = request.UserName,
-            Email = request.Email,
+            Email    = request.Email,
             PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password)
         };
 
-        _context.Users.Add(user);
-        await _context.SaveChangesAsync();
-
+        await _users.Create(user);
         return Ok("Kayıt başarılı.");
     }
 
     [HttpPost("login")]
     public async Task<IActionResult> Login([FromBody] LoginDto request)
     {
-        var user = await _context.Users.FirstOrDefaultAsync(u => u.UserName == request.UserName);
-        if (user == null)
-            return BadRequest("Kullanıcı bulunamadı.");
+        var user = await _users.GetByUserName(request.UserName);
+        if (user == null) return BadRequest("Kullanıcı bulunamadı.");
 
-        bool isPasswordValid = BCrypt.Net.BCrypt.Verify(request.Password, user.PasswordHash);
-
-        if (!isPasswordValid)
+        if (!BCrypt.Net.BCrypt.Verify(request.Password, user.PasswordHash))
             return BadRequest("Şifre yanlış.");
 
-        string token = CreateToken(user);
-        string refreshToken = GenerateRefreshToken();
+        var token   = CreateToken(user);
+        var refresh = GenerateRefreshToken();
 
-        user.RefreshToken = refreshToken;
-        user.RefreshTokenExpiryTime = DateTime.UtcNow.AddDays(7);
+        int rDays = int.TryParse(_config["Jwt:RefreshTokenExpireDays"], out var rr) ? rr : 7;
+        user.RefreshToken = refresh;
+        user.RefreshTokenExpiryTime = DateTime.UtcNow.AddDays(rDays);
 
-
-        await _context.SaveChangesAsync();
-
-        return Ok(new { token, refreshToken });
-
+        await _users.Update(user);
+        return Ok(new { token, refreshToken = refresh });
     }
 
-    
     [HttpPost("refresh-token")]
     public async Task<IActionResult> RefreshToken([FromBody] RefreshTokenRequest request)
     {
-        var user = await _context.Users.FirstOrDefaultAsync(u => u.RefreshToken == request.RefreshToken);
-        if (user == null || user.RefreshTokenExpiryTime < DateTime.UtcNow)
+        var user = await _users.GetByRefreshToken(request.RefreshToken);
+        if (user is null || user.RefreshTokenExpiryTime < DateTime.UtcNow)
             return Unauthorized("Geçersiz veya süresi dolmuş refresh token.");
 
-        string newAccessToken = CreateToken(user);
-        string newRefreshToken = GenerateRefreshToken();
+        var newAccess  = CreateToken(user);
+        var newRefresh = GenerateRefreshToken();
 
-        user.RefreshToken = newRefreshToken;
-       int refreshExpireDays = int.TryParse(_config["Jwt:RefreshTokenExpireDays"], out var rDays) ? rDays : 7;
-        user.RefreshTokenExpiryTime = DateTime.UtcNow.AddDays(refreshExpireDays);
+        int rDays = int.TryParse(_config["Jwt:RefreshTokenExpireDays"], out var rr) ? rr : 7;
+        user.RefreshToken = newRefresh;
+        user.RefreshTokenExpiryTime = DateTime.UtcNow.AddDays(rDays);
 
-
-        await _context.SaveChangesAsync();
-
-        return Ok(new { token = newAccessToken, refreshToken = newRefreshToken });
+        await _users.Update(user);
+        return Ok(new { token = newAccess, refreshToken = newRefresh });
     }
-
-
-
 
     private string CreateToken(User user)
-    {
-        var claims = new List<Claim>
         {
-            new Claim(ClaimTypes.Name, user.UserName),
-            new Claim(ClaimTypes.Email, user.Email ?? "")
-        };
+            var claims = new List<Claim>
+            {
+                new Claim(JwtRegisteredClaimNames.Sub, user.UserName),
+                new Claim(ClaimTypes.Name,  user.UserName),
+                new Claim(ClaimTypes.Email, user.Email ?? string.Empty),
 
-        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_config["Jwt:Key"]));
-        var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
+                // 🔥 Rol claim’i:
+                new Claim(ClaimTypes.Role, user.UserType.ToString())
+            };
 
-     int expireDays = int.TryParse(_config["Jwt:ExpireDays"], out var days) ? days : 1;
+            var keyStr = _config.GetValue<string>("Jwt:Key")
+                         ?? throw new InvalidOperationException("Jwt:Key missing.");
+            var key   = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(keyStr));
+            var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
 
+            int days = int.TryParse(_config["Jwt:ExpireDays"], out var d) ? d : 1;
 
-        var token = new JwtSecurityToken(
-            claims: claims,
-            expires: DateTime.Now.AddDays(expireDays), //Burada token süresini uzattık çıkış yapmadan çıkış yapmıycak token unutulmayacak
-            signingCredentials: creds);
+            var token = new JwtSecurityToken(
+                claims: claims,
+                notBefore: DateTime.UtcNow,
+                expires:   DateTime.UtcNow.AddDays(days),
+                signingCredentials: creds
+            );
 
-        return new JwtSecurityTokenHandler().WriteToken(token);
-    }
+            return new JwtSecurityTokenHandler().WriteToken(token);
+        }
 
     private string GenerateRefreshToken()
     {
-        var randomBytes = new byte[64];
+        var bytes = new byte[64];
         using var rng = RandomNumberGenerator.Create();
-        rng.GetBytes(randomBytes);
-        return Convert.ToBase64String(randomBytes);
+        rng.GetBytes(bytes);
+        return Convert.ToBase64String(bytes);
     }
-
-
 }

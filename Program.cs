@@ -1,78 +1,63 @@
 using CommentToGame.Data;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
+using Microsoft.OpenApi.Models;
+using System.Security.Claims;
 using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// ✅ MySQL bağlantısı
-builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseMySql(
-        builder.Configuration.GetConnectionString("Default"),
-        ServerVersion.AutoDetect(builder.Configuration.GetConnectionString("Default"))
-    ));
+// Mongo settings & repo
+builder.Services.Configure<MongoDbSettings>(builder.Configuration.GetSection("MongoDb"));
+builder.Services.AddSingleton<IUserRepository, UserRepository>();
 
+// 🔐 JWT key'i güvenli al
+var jwtKey = builder.Configuration.GetValue<string>("Jwt:Key")
+            ?? throw new InvalidOperationException("Jwt:Key is missing in configuration.");
+
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(o =>
+    {
+        o.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey)),
+            ValidateIssuer = false,
+            ValidateAudience = false,
+            RoleClaimType  = ClaimTypes.Role
+        };
+    });
+
+// Swagger…
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
-
-builder.Services.AddSwaggerGen(options =>
+builder.Services.AddSwaggerGen(o =>
 {
-    options.SwaggerDoc("v1", new Microsoft.OpenApi.Models.OpenApiInfo
+    o.SwaggerDoc("v1", new OpenApiInfo { Title = "CommentToGame API", Version = "v1" });
+    o.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
     {
-        Title = "CommentToGame API",
-        Version = "v1"
+        Name = "Authorization", In = ParameterLocation.Header,
+        Type = SecuritySchemeType.ApiKey, Scheme = "Bearer", BearerFormat = "JWT",
+        Description = "JWT gir: Bearer {token}"
     });
-
-    // JWT Auth ayarı
-    options.AddSecurityDefinition("Bearer", new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+    o.AddSecurityRequirement(new OpenApiSecurityRequirement
     {
-        Name = "Authorization",
-        Type = Microsoft.OpenApi.Models.SecuritySchemeType.ApiKey,
-        Scheme = "Bearer",
-        BearerFormat = "JWT",
-        In = Microsoft.OpenApi.Models.ParameterLocation.Header,
-        Description = "JWT Token'ı şu formatta girin: Bearer {token}"
-    });
-
-    options.AddSecurityRequirement(new Microsoft.OpenApi.Models.OpenApiSecurityRequirement
-    {
-        {
-            new Microsoft.OpenApi.Models.OpenApiSecurityScheme
-            {
-                Reference = new Microsoft.OpenApi.Models.OpenApiReference
-                {
-                    Type = Microsoft.OpenApi.Models.ReferenceType.SecurityScheme,
-                    Id = "Bearer"
-                }
-            },
-            new string[] {}
-        }
+        { new OpenApiSecurityScheme{ Reference = new OpenApiReference{ Type = ReferenceType.SecurityScheme, Id = "Bearer"} }, new string[]{} }
     });
 });
 
-builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-    .AddJwtBearer(options =>
-    {
-        options.TokenValidationParameters = new TokenValidationParameters
-        {
-            ValidateIssuerSigningKey = true,
-            IssuerSigningKey = new SymmetricSecurityKey(
-                Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"])),
-            ValidateIssuer = false,
-            ValidateAudience = false
-        };
-    });
 var app = builder.Build();
 
-app.UseSwagger();
-app.UseSwaggerUI();
-
+if (app.Environment.IsDevelopment()) { app.UseSwagger(); app.UseSwaggerUI(); }
 app.UseHttpsRedirection();
-app.UseAuthentication(); // ⬅️ Bu satır UseAuthorization'dan önce olmalı
+app.UseAuthentication();
 app.UseAuthorization();
 
-app.MapControllers();
+using (var scope = app.Services.CreateScope())
+{
+    var repo = scope.ServiceProvider.GetRequiredService<IUserRepository>();
+    await repo.CreateIndexesIfNeeded();
+}
 
+app.MapControllers();
 app.Run();

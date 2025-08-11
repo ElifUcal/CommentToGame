@@ -76,6 +76,10 @@
               "target": "Package",
               "version": "[9.0.7, )"
             },
+            "MongoDB.Driver": {
+              "target": "Package",
+              "version": "[3.4.2, )"
+            },
             "Pomelo.EntityFrameworkCore.MySql": {
               "target": "Package",
               "version": "[9.0.0-preview.3.efcore.9.0.0, )"
