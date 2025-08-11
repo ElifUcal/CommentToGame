@@ -8,8 +8,7 @@ using System.Text;
 var builder = WebApplication.CreateBuilder(args);
 
 // Mongo settings & repo
-builder.Services.Configure<MongoDbSettings>(builder.Configuration.GetSection("MongoDb"));
-builder.Services.AddSingleton<IUserRepository, UserRepository>();
+builder.Services.AddSingleton<MongoDbService>();
 
 // 🔐 JWT key'i güvenli al
 var jwtKey = builder.Configuration.GetValue<string>("Jwt:Key")
@@ -55,8 +54,8 @@ app.UseAuthorization();
 
 using (var scope = app.Services.CreateScope())
 {
-    var repo = scope.ServiceProvider.GetRequiredService<IUserRepository>();
-    await repo.CreateIndexesIfNeeded();
+    var mongo = scope.ServiceProvider.GetRequiredService<CommentToGame.Data.MongoDbService>();
+    await CommentToGame.Infrastructure.MongoIndexBootstrapper.CreateAsync(mongo);
 }
 
 app.MapControllers();
