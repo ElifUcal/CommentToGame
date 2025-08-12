@@ -18,6 +18,9 @@ public class RawgImportService
     private readonly IMongoCollection<Game_Details> _details;
     private readonly IMongoCollection<Genre> _genres;
     private readonly IMongoCollection<Platform> _platforms;
+    private readonly IMongoCollection<MinRequirement> _minReqs;
+    private readonly IMongoCollection<RecRequirement> _recReqs;
+
 
     public RawgImportService(IRawgClient rawg, MongoDbService svc)
     {
@@ -27,6 +30,8 @@ public class RawgImportService
         _details = db.GetCollection<Game_Details>("GameDetails");
         _genres = db.GetCollection<Genre>("Genres");
         _platforms = db.GetCollection<Platform>("Platforms");
+        _minReqs = db.GetCollection<MinRequirement>("MinRequirements");
+        _recReqs = db.GetCollection<RecRequirement>("RecRequirements");
     }
 
     public async Task<int> ImportAsync(int pages = 1, int pageSize = 40)
@@ -184,102 +189,124 @@ public class RawgImportService
 
         // 3) Game upsert (isim bazlı)
         var gameFilter = Builders<Game>.Filter.Eq(x => x.Game_Name, detail.Name);
-    // 3) Game upsert (isim bazlı) – mevcut gameUpdate'ini genişlet
-var gameUpdate = Builders<Game>.Update
-    .Set(x => x.Release_Date, DateTime.TryParse(detail.Released, out var dt) ? dt : null)
-    .Set(x => x.Metacritic_Rating, detail.Metacritic)
-    .Set(x => x.GgDb_Rating, detail.Rating.HasValue ? (int?)Math.Round(detail.Rating.Value * 20) : null)
-    .Set(x => x.Popularity, detail.Added)                   // NEW
-    .Set(x => x.Main_image_URL, detail.BackgroundImage)     // NEW
-    .Set(x => x.CompanyIds, new List<string>())
-    .SetOnInsert(x => x.Game_Name, detail.Name)
-    .SetOnInsert(x => x.Id, ObjectId.GenerateNewId().ToString());
+        // 3) Game upsert (isim bazlı) – mevcut gameUpdate'ini genişlet
+        var gameUpdate = Builders<Game>.Update
+            .Set(x => x.Release_Date, DateTime.TryParse(detail.Released, out var dt) ? dt : null)
+            .Set(x => x.Metacritic_Rating, detail.Metacritic)
+            .Set(x => x.GgDb_Rating, detail.Rating.HasValue ? (int?)Math.Round(detail.Rating.Value * 20) : null)
+            .Set(x => x.Popularity, detail.Added)                   // NEW
+            .Set(x => x.Main_image_URL, detail.BackgroundImage)     // NEW
+            .Set(x => x.CompanyIds, new List<string>())
+            .SetOnInsert(x => x.Game_Name, detail.Name)
+            .SetOnInsert(x => x.Id, ObjectId.GenerateNewId().ToString());
 
         var gameFromDb = await _games.FindOneAndUpdateAsync(
             gameFilter, gameUpdate,
             new FindOneAndUpdateOptions<Game> { IsUpsert = true, ReturnDocument = ReturnDocument.After });
 
-// 4) Game_Details upsert – About + yaş dereceleri + (opsiyonel) series + PC requirements
-var detFilter = Builders<Game_Details>.Filter.Eq(x => x.GameId, gameFromDb.Id);
+        // 4) Game_Details upsert – About + yaş dereceleri + (opsiyonel) series + PC requirements
+        var detFilter = Builders<Game_Details>.Filter.Eq(x => x.GameId, gameFromDb.Id);
 
-// Age ratings: RAWG'deki Id'leri doğrudan koleksiyondaki int listene yazıyoruz
-var ageRatingNames = new List<string>();
+        // Age ratings: RAWG'deki Id'leri doğrudan koleksiyondaki int listene yazıyoruz
+        var ageRatingNames = new List<string>();
 
-if (!string.IsNullOrWhiteSpace(detail.EsrbRating?.Name))
-    ageRatingNames.Add(detail.EsrbRating.Name);
+        if (!string.IsNullOrWhiteSpace(detail.EsrbRating?.Name))
+            ageRatingNames.Add(detail.EsrbRating.Name);
 
-if (detail.AgeRatings != null)
-{
-    ageRatingNames.AddRange(
-        detail.AgeRatings
-              .Select(a => a.Name)
-              .Where(n => !string.IsNullOrWhiteSpace(n))!);
-}
+        if (detail.AgeRatings != null)
+        {
+            ageRatingNames.AddRange(
+                detail.AgeRatings
+                      .Select(a => a.Name)
+                      .Where(n => !string.IsNullOrWhiteSpace(n))!);
+        }
 
-ageRatingNames = ageRatingNames.Distinct().ToList();
+        ageRatingNames = ageRatingNames.Distinct().ToList();
 
-var detUpdate = Builders<Game_Details>.Update
-    .Set(x => x.Developer, detail.Developers.FirstOrDefault()?.Name)
-    .Set(x => x.Publisher, detail.Publishers.FirstOrDefault()?.Name)
-    .Set(x => x.GenreIds, genreIds)
-    .Set(x => x.PlatformIds, platformIds)
-    .Set(x => x.Story, detail.DescriptionRaw)              // About
-    .Set(x => x.Age_Ratings, ageRatingNames)                 // NEW
-    .SetOnInsert(x => x.GameId, gameFromDb.Id)
-    .SetOnInsert(x => x.Id, ObjectId.GenerateNewId().ToString());
+        var tagNames = detail.Tags?
+        .Select(t => t.Name)
+        .Where(n => !string.IsNullOrWhiteSpace(n))
+        .Distinct()
+        .ToList() ?? new List<string>();
 
-// (opsiyonel) Series: isim listesini DLCs ya da Tags içine basabiliriz
-try
-{
-    var series = await _rawg.GetGameSeriesAsync(detail.Id);
-    if (series?.Results?.Count > 0)
+
+        var pcReq = detail.Platforms?
+    .FirstOrDefault(p => p.Platform.Slug == "pc")?.Requirements;
+
+    string? minId = null, recId = null;
+        if (pcReq is not null)
+        {
+            minId = await UpsertMinRequirementAsync(pcReq.Minimum);
+            recId = await UpsertRecRequirementAsync(pcReq.Recommended);
+        }
+
+
+
+        var detUpdate = Builders<Game_Details>.Update
+        .Set(x => x.Developer, detail.Developers.FirstOrDefault()?.Name)
+        .Set(x => x.Publisher, detail.Publishers.FirstOrDefault()?.Name)
+        .Set(x => x.GenreIds, genreIds)
+        .Set(x => x.PlatformIds, platformIds)
+        .Set(x => x.Story, detail.DescriptionRaw)              // About
+        .Set(x => x.Age_Ratings, ageRatingNames)
+        .Set(x => x.Tags, tagNames)                  // NEW
+        .SetOnInsert(x => x.GameId, gameFromDb.Id)
+        .SetOnInsert(x => x.Id, ObjectId.GenerateNewId().ToString());
+
+        // ID’ler null değilse set et
+        if (!string.IsNullOrEmpty(minId))
+            detUpdate = detUpdate.Set(x => x.MinRequirementId, minId);
+        if (!string.IsNullOrEmpty(recId))
+            detUpdate = detUpdate.Set(x => x.RecRequirementId, recId);
+
+
+        // (opsiyonel) Series: isim listesini DLCs ya da Tags içine basabiliriz
+        try
+        {
+            var additions = await _rawg.GetGameAdditionsAsync(detail.Id);
+            var dlcNames = additions?.Results?
+                .Select(a => a.Name)
+                .Where(n => !string.IsNullOrWhiteSpace(n))
+                .Distinct()
+                .ToList() ?? new List<string>();
+
+            detUpdate = detUpdate.Set(x => x.DLCs, dlcNames);
+        }
+        catch
+        {
+            detUpdate = detUpdate.Set(x => x.DLCs, new List<string>());
+        }
+
+
+        // (opsiyonel) PC sistem gereksinimleri (varsa)
+        
+
+        await _details.UpdateOneAsync(detFilter, detUpdate, new UpdateOptions { IsUpsert = true });
+    }
+
+    // (İsteğe bağlı) Sayfalı liste
+    public async Task<List<Game>> GetAllGamesAsync(int skip, int take)
     {
-        var names = series.Results.Select(r => r.Name).Distinct().ToList();
-        detUpdate = detUpdate.Set(x => x.DLCs, names);   // Modelinde uygun alan bu olduğu için
-        // alternatif: .Set(x => x.Tags, names)
-    }
-}
-catch { /* sessiz geç: bazı oyunlarda olmayabilir */ }
-
-// (opsiyonel) PC sistem gereksinimleri (varsa)
-var pcReq = detail.Platforms?.FirstOrDefault(p => p.Platform.Slug == "pc")?.Requirements;
-if (pcReq is not null && (!string.IsNullOrWhiteSpace(pcReq.Minimum) || !string.IsNullOrWhiteSpace(pcReq.Recommended)))
-{
-    // Eğer MinRequirement / RecRequirement diye master koleksiyonların varsa burada upsert edip
-    // Id'lerini Game_Details.MinRequirementId / RecRequirementId'ye set edebilirsin.
-    // Örnek (model isimlerini kendine göre güncelle):
-    // var minId = await UpsertMinRequirementAsync(pcReq.Minimum);
-    // var recId = await UpsertRecRequirementAsync(pcReq.Recommended);
-    // detUpdate = detUpdate.Set(x => x.MinRequirementId, minId)
-    //                      .Set(x => x.RecRequirementId, recId);
-}
-
-await _details.UpdateOneAsync(detFilter, detUpdate, new UpdateOptions { IsUpsert = true });
+        if (skip < 0) skip = 0;
+        if (take <= 0) take = 50;
+        return await _games.Find(FilterDefinition<Game>.Empty)
+                           .Skip(skip)
+                           .Limit(take)
+                           .ToListAsync();
     }
 
-// (İsteğe bağlı) Sayfalı liste
-public async Task<List<Game>> GetAllGamesAsync(int skip, int take)
-{
-    if (skip < 0) skip = 0;
-    if (take <= 0) take = 50;
-    return await _games.Find(FilterDefinition<Game>.Empty)
-                       .Skip(skip)
-                       .Limit(take)
-                       .ToListAsync();
-}
+    // (İsteğe bağlı) DB'de isimle ara (case-insensitive)
+    public async Task<List<Game>> SearchGamesInDbAsync(string q, int limit = 50)
+    {
+        if (string.IsNullOrWhiteSpace(q)) return new List<Game>();
+        var filter = Builders<Game>.Filter.Regex(g => g.Game_Name, new BsonRegularExpression(q, "i"));
+        return await _games.Find(filter).Limit(limit).ToListAsync();
+    }
+    public async Task<List<object>> SearchGamesWithDetailsAsync(string q, bool officialOnly = false, int limit = 50)
+    {
+        if (string.IsNullOrWhiteSpace(q)) q = ".*";
 
-// (İsteğe bağlı) DB'de isimle ara (case-insensitive)
-public async Task<List<Game>> SearchGamesInDbAsync(string q, int limit = 50)
-{
-    if (string.IsNullOrWhiteSpace(q)) return new List<Game>();
-    var filter = Builders<Game>.Filter.Regex(g => g.Game_Name, new BsonRegularExpression(q, "i"));
-    return await _games.Find(filter).Limit(limit).ToListAsync();
-}
-public async Task<List<object>> SearchGamesWithDetailsAsync(string q, bool officialOnly = false, int limit = 50)
-{
-    if (string.IsNullOrWhiteSpace(q)) q = ".*";
-
-    var pipeline = new List<BsonDocument>
+        var pipeline = new List<BsonDocument>
     {
         // name filtre
         new BsonDocument("$match", new BsonDocument("Game_Name",
@@ -305,17 +332,17 @@ public async Task<List<object>> SearchGamesWithDetailsAsync(string q, bool offic
         })
     };
 
-    if (officialOnly)
-    {
-        pipeline.Add(new BsonDocument("$match",
-            new BsonDocument("$or", new BsonArray {
+        if (officialOnly)
+        {
+            pipeline.Add(new BsonDocument("$match",
+                new BsonDocument("$or", new BsonArray {
                 new BsonDocument("details.Developer", new BsonDocument("$regex","Rockstar").Add("$options","i")),
                 new BsonDocument("details.Publisher", new BsonDocument("$regex","Rockstar").Add("$options","i"))
-            })));
-    }
+                })));
+        }
 
-    pipeline.AddRange(new[]
-    {
+        pipeline.AddRange(new[]
+        {
         // genres lookup  --------- YAMA #3: let.ids her zaman array ---------
         new BsonDocument("$lookup", new BsonDocument {
             { "from", "Genres" },
@@ -339,9 +366,33 @@ public async Task<List<object>> SearchGamesWithDetailsAsync(string q, bool offic
             }},
             { "as", "platformDocs" }
         }),
+        
+
+                // MinRequirement lookup
+        new BsonDocument("$lookup", new BsonDocument {
+            { "from", "MinRequirements" },
+            { "localField", "details.MinRequirementId" },
+            { "foreignField", "_id" },
+            { "as", "minReqDoc" }
+        }),
+        // RecRequirement lookup
+        new BsonDocument("$lookup", new BsonDocument {
+            { "from", "RecRequirements" },
+            { "localField", "details.RecRequirementId" },
+            { "foreignField", "_id" },
+            { "as", "recReqDoc" }
+        }),
+        // Güvenli şekilde metni al
+        new BsonDocument("$set", new BsonDocument {
+            { "minRequirement", new BsonDocument("$ifNull",
+                new BsonArray { new BsonDocument("$first", "$minReqDoc.Text"), BsonNull.Value }) },
+            { "recRequirement", new BsonDocument("$ifNull",
+                new BsonArray { new BsonDocument("$first", "$recReqDoc.Text"), BsonNull.Value }) }
+        }),
+
 
         // sıralama ve limit
-        new BsonDocument("$sort", new BsonDocument("Release_Date", -1)),
+            new BsonDocument("$sort", new BsonDocument("Release_Date", -1)),
         new BsonDocument("$limit", limit),
 
         // son proje (temiz JSON)
@@ -356,7 +407,11 @@ public async Task<List<object>> SearchGamesWithDetailsAsync(string q, bool offic
             { "popularity", "$Popularity" },
             { "developer", "$details.Developer" },
             { "publisher", "$details.Publisher" },
+            { "minRequirement", "$minRequirement" },
+            { "recRequirement", "$recRequirement" },
             { "ageRatings", "$details.Age_Ratings" },
+            { "dlcs", "$details.DLCs" },
+            { "tags", "$details.Tags" },
             { "genres", new BsonDocument("$map", new BsonDocument {
                 { "input", "$genreDocs" }, { "as", "g" }, { "in", "$$g.Name" }
             })},
@@ -367,9 +422,51 @@ public async Task<List<object>> SearchGamesWithDetailsAsync(string q, bool offic
         })
     });
 
-    var cursor = await _games.Aggregate<BsonDocument>(pipeline).ToListAsync();
-    return cursor.Select(c => (object)MongoDB.Bson.Serialization.BsonSerializer.Deserialize<dynamic>(c)).ToList();
+        var cursor = await _games.Aggregate<BsonDocument>(pipeline).ToListAsync();
+        return cursor.Select(c => (object)MongoDB.Bson.Serialization.BsonSerializer.Deserialize<dynamic>(c)).ToList();
+    }
+
+
+    private async Task<string?> UpsertMinRequirementAsync(string? text)
+{
+    if (string.IsNullOrWhiteSpace(text)) return null;
+
+    var filter = Builders<MinRequirement>.Filter.Eq(x => x.Text, text);
+    var update = Builders<MinRequirement>.Update
+        .SetOnInsert(x => x.Id, ObjectId.GenerateNewId().ToString())
+        .SetOnInsert(x => x.Text, text.Trim());
+
+    var doc = await _minReqs.FindOneAndUpdateAsync(
+        filter, update,
+        new FindOneAndUpdateOptions<MinRequirement>
+        {
+            IsUpsert = true,
+            ReturnDocument = ReturnDocument.After
+        });
+
+    return doc?.Id;
 }
+
+private async Task<string?> UpsertRecRequirementAsync(string? text)
+{
+    if (string.IsNullOrWhiteSpace(text)) return null;
+
+    var filter = Builders<RecRequirement>.Filter.Eq(x => x.Text, text);
+    var update = Builders<RecRequirement>.Update
+        .SetOnInsert(x => x.Id, ObjectId.GenerateNewId().ToString())
+        .SetOnInsert(x => x.Text, text.Trim());
+
+    var doc = await _recReqs.FindOneAndUpdateAsync(
+        filter, update,
+        new FindOneAndUpdateOptions<RecRequirement>
+        {
+            IsUpsert = true,
+            ReturnDocument = ReturnDocument.After
+        });
+
+    return doc?.Id;
+}
+
 
 
 }

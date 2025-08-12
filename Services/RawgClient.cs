@@ -50,13 +50,23 @@ public class RawgClient : IRawgClient
         resp.EnsureSuccessStatusCode();
         return await resp.Content.ReadFromJsonAsync<RawgPaged<RawgGameSummary>>() ?? new();
     }
-    
+
     // RawgClient.cs
-public async Task<RawgPaged<RawgGameSummary>> GetGameSeriesAsync(int id)
+    public async Task<RawgPaged<RawgGameSummary>> GetGameSeriesAsync(int id)
+    {
+        var url = $"{_baseUrl}/games/{id}/game-series?key={_apiKey}&page_size=40";
+        using var resp = await _http.GetAsync(url);
+        resp.EnsureSuccessStatusCode();
+        return await resp.Content.ReadFromJsonAsync<RawgPaged<RawgGameSummary>>() ?? new();
+    }
+
+    public async Task<RawgPaged<RawgGameSummary>> GetGameAdditionsAsync(int id)
 {
-    var url = $"{_baseUrl}/games/{id}/game-series?key={_apiKey}&page_size=40";
+    var url = $"{_baseUrl}/games/{id}/additions?key={_apiKey}&page_size=40";
     using var resp = await _http.GetAsync(url);
     resp.EnsureSuccessStatusCode();
     return await resp.Content.ReadFromJsonAsync<RawgPaged<RawgGameSummary>>() ?? new();
 }
+
+
 }

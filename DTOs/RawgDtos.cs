@@ -9,6 +9,13 @@ public class RawgPaged<T>
     public List<T> Results { get; set; } = new();
 }
 
+public class RawgTag
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = default!;
+    public string? Slug { get; set; }
+}
+
 public class RawgGameSummary
 {
     public int Id { get; set; }
@@ -52,6 +59,9 @@ public class RawgGameDetail : RawgGameSummary
 
     public int? Playtime { get; set; }   // saat
     public string? Website { get; set; }
+
+     [JsonPropertyName("tags")]
+    public List<RawgTag> Tags { get; set; } = new();
 }
 
 public class RawgNameWrapper
