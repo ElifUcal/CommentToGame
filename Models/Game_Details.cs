@@ -44,7 +44,7 @@ public class Game_Details
     public List<string> Subtitles { get; set; } = new();
     public List<string> Interface_Language { get; set; } = new();
     public List<string> Content_Warnings { get; set; } = new();
-    public List<int> Age_Ratings { get; set; } = new();
+    public List<string>? Age_Ratings { get; set; }
 
     [BsonRepresentation(BsonType.ObjectId)]
     public string? MinRequirementId { get; set; }

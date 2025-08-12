@@ -203,7 +203,20 @@ var gameUpdate = Builders<Game>.Update
 var detFilter = Builders<Game_Details>.Filter.Eq(x => x.GameId, gameFromDb.Id);
 
 // Age ratings: RAWG'deki Id'leri doğrudan koleksiyondaki int listene yazıyoruz
-var ageRatingIds = detail.AgeRatings?.Select(a => a.Id).ToList() ?? new List<int>();
+var ageRatingNames = new List<string>();
+
+if (!string.IsNullOrWhiteSpace(detail.EsrbRating?.Name))
+    ageRatingNames.Add(detail.EsrbRating.Name);
+
+if (detail.AgeRatings != null)
+{
+    ageRatingNames.AddRange(
+        detail.AgeRatings
+              .Select(a => a.Name)
+              .Where(n => !string.IsNullOrWhiteSpace(n))!);
+}
+
+ageRatingNames = ageRatingNames.Distinct().ToList();
 
 var detUpdate = Builders<Game_Details>.Update
     .Set(x => x.Developer, detail.Developers.FirstOrDefault()?.Name)
@@ -211,7 +224,7 @@ var detUpdate = Builders<Game_Details>.Update
     .Set(x => x.GenreIds, genreIds)
     .Set(x => x.PlatformIds, platformIds)
     .Set(x => x.Story, detail.DescriptionRaw)              // About
-    .Set(x => x.Age_Ratings, ageRatingIds)                 // NEW
+    .Set(x => x.Age_Ratings, ageRatingNames)                 // NEW
     .SetOnInsert(x => x.GameId, gameFromDb.Id)
     .SetOnInsert(x => x.Id, ObjectId.GenerateNewId().ToString());
 
@@ -275,12 +288,21 @@ public async Task<List<object>> SearchGamesWithDetailsAsync(string q, bool offic
         // details join
         new BsonDocument("$lookup", new BsonDocument {
             { "from", "GameDetails" },
-            { "localField", "Id" },
+            { "localField", "_id" },
             { "foreignField", "GameId" },
             { "as", "details" }
         }),
-        new BsonDocument("$unwind", new BsonDocument("path", "$details")
-            .Add("preserveNullAndEmptyArrays", true))
+
+        // --------- YAMA #1: details hep obje olsun ---------
+        new BsonDocument("$set", new BsonDocument("details",
+            new BsonDocument("$ifNull", new BsonArray { new BsonDocument("$first", "$details"), new BsonDocument() })
+        )),
+
+        // --------- YAMA #2: ids alanları hep dizi olsun ----
+        new BsonDocument("$set", new BsonDocument {
+            { "details.GenreIds",    new BsonDocument("$ifNull", new BsonArray { "$details.GenreIds",    new BsonArray() }) },
+            { "details.PlatformIds", new BsonDocument("$ifNull", new BsonArray { "$details.PlatformIds", new BsonArray() }) }
+        })
     };
 
     if (officialOnly)
@@ -294,29 +316,34 @@ public async Task<List<object>> SearchGamesWithDetailsAsync(string q, bool offic
 
     pipeline.AddRange(new[]
     {
-        // genres lookup
+        // genres lookup  --------- YAMA #3: let.ids her zaman array ---------
         new BsonDocument("$lookup", new BsonDocument {
             { "from", "Genres" },
-            { "let", new BsonDocument("ids", "$details.GenreIds") },
+            { "let", new BsonDocument("ids",
+                new BsonDocument("$ifNull", new BsonArray { "$details.GenreIds", new BsonArray() })) },
             { "pipeline", new BsonArray {
                 new BsonDocument("$match", new BsonDocument("$expr",
                     new BsonDocument("$in", new BsonArray { "$_id", "$$ids" })))
             }},
             { "as", "genreDocs" }
         }),
-        // platforms lookup
+
+        // platforms lookup  ------ YAMA #3: let.ids her zaman array ---------
         new BsonDocument("$lookup", new BsonDocument {
             { "from", "Platforms" },
-            { "let", new BsonDocument("ids", "$details.PlatformIds") },
+            { "let", new BsonDocument("ids",
+                new BsonDocument("$ifNull", new BsonArray { "$details.PlatformIds", new BsonArray() })) },
             { "pipeline", new BsonArray {
                 new BsonDocument("$match", new BsonDocument("$expr",
                     new BsonDocument("$in", new BsonArray { "$_id", "$$ids" })))
             }},
             { "as", "platformDocs" }
         }),
+
         // sıralama ve limit
         new BsonDocument("$sort", new BsonDocument("Release_Date", -1)),
         new BsonDocument("$limit", limit),
+
         // son proje (temiz JSON)
         new BsonDocument("$project", new BsonDocument {
             { "_id", 0 },
@@ -343,5 +370,6 @@ public async Task<List<object>> SearchGamesWithDetailsAsync(string q, bool offic
     var cursor = await _games.Aggregate<BsonDocument>(pipeline).ToListAsync();
     return cursor.Select(c => (object)MongoDB.Bson.Serialization.BsonSerializer.Deserialize<dynamic>(c)).ToList();
 }
+
 
 }
