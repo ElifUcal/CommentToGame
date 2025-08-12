@@ -1,4 +1,5 @@
 using CommentToGame.Data;
+using CommentToGame.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
@@ -26,7 +27,8 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             RoleClaimType  = ClaimTypes.Role
         };
     });
-
+builder.Services.AddHttpClient<IRawgClient, RawgClient>();
+builder.Services.AddSingleton<RawgImportService>();
 // Swagger…
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
