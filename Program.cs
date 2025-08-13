@@ -6,6 +6,8 @@ using Microsoft.OpenApi.Models;
 using System.Security.Claims;
 using System.Text;
 
+
+
 var builder = WebApplication.CreateBuilder(args);
 
 // Mongo settings & repo
@@ -29,6 +31,12 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     });
 builder.Services.AddHttpClient<IRawgClient, RawgClient>();
 builder.Services.AddSingleton<RawgImportService>();
+builder.Services.AddHttpClient();
+builder.Services.AddSingleton<IgdbAuthService>();
+builder.Services.AddSingleton<IIgdbClient, IgdbClient>();
+builder.Services.AddSingleton<IgdbImportService>();
+builder.Services.AddSingleton<GameEditService>();
+
 // Swagger…
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
