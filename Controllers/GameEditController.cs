@@ -24,7 +24,7 @@ namespace CommentToGame.Controllers
         [HttpGet("by-name-like/{name}")]
         public async Task<IActionResult> GetByNameLike([FromRoute] string name, CancellationToken ct)
         {
-            var dto = await _edit.GetEditableByNameLikeAsync(name, ct);
+            var dto = await _edit.GetEditableByNameLikeAsync(name, ct: ct);
             if (dto is null) return NotFound(new { message = "No match" });
             return Ok(dto);
         }

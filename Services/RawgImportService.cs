@@ -233,12 +233,20 @@ public class RawgImportService
         var pcReq = detail.Platforms?
     .FirstOrDefault(p => p.Platform.Slug == "pc")?.Requirements;
 
-    string? minId = null, recId = null;
+        string? minId = null, recId = null;
         if (pcReq is not null)
         {
             minId = await UpsertMinRequirementAsync(pcReq.Minimum);
             recId = await UpsertRecRequirementAsync(pcReq.Recommended);
         }
+
+    var engineNames = Enumerable.Empty<string>()
+    .Concat(detail.GameEngines?.Select(e => e.Name) ?? Enumerable.Empty<string>())
+    .Concat(detail.EnginesAlt?.Select(e => e.Name) ?? Enumerable.Empty<string>())
+    .Where(n => !string.IsNullOrWhiteSpace(n))
+    .Distinct()
+    .ToList();
+
 
 
 
@@ -249,7 +257,14 @@ public class RawgImportService
         .Set(x => x.PlatformIds, platformIds)
         .Set(x => x.Story, detail.DescriptionRaw)              // About
         .Set(x => x.Age_Ratings, ageRatingNames)
-        .Set(x => x.Tags, tagNames)                  // NEW
+        .Set(x => x.Tags, tagNames)
+        .Set(x => x.Engines, engineNames)
+        .Set(x => x.TimeToBeat_Normally, detail.Playtime)      // NEW
+        .Set(x => x.Audio_Language, detail.LanguagesAudio ?? new List<string>())
+        .Set(x => x.Subtitles, detail.LanguagesSubtitles ?? new List<string>())
+        .Set(x => x.Interface_Language, detail.Languages ?? new List<string>())
+        .Set(x => x.Content_Warnings, detail.ContentWarnings ?? new List<string>())
+
         .SetOnInsert(x => x.GameId, gameFromDb.Id)
         .SetOnInsert(x => x.Id, ObjectId.GenerateNewId().ToString());
 
@@ -258,6 +273,12 @@ public class RawgImportService
             detUpdate = detUpdate.Set(x => x.MinRequirementId, minId);
         if (!string.IsNullOrEmpty(recId))
             detUpdate = detUpdate.Set(x => x.RecRequirementId, recId);
+
+        
+
+    
+
+
 
 
         // (opsiyonel) Series: isim listesini DLCs ya da Tags içine basabiliriz
@@ -277,9 +298,59 @@ public class RawgImportService
             detUpdate = detUpdate.Set(x => x.DLCs, new List<string>());
         }
 
+        try
+        {
+            var storeResp = await _rawg.GetGameStoresAsync(detail.Id);
+            var results = storeResp?.Results ?? new List<RawgGameStoreItem>();
+
+            var links = results
+                .Where(r => !string.IsNullOrWhiteSpace(r.Url))
+                .Select(r =>
+                {
+                    // Önce RAWG 'store' objesinden oku
+                    var storeId = r.Store?.Id > 0 ? r.Store!.Id : (r.StoreId ?? 0);
+                    var storeName = r.Store?.Name;
+                    var storeSlug = r.Store?.Slug;
+                    var storeDomain = r.Store?.Domain;
+
+                    // Eksikse URL'den tahmin et
+                    if (string.IsNullOrWhiteSpace(storeName) || string.IsNullOrWhiteSpace(storeSlug))
+                    {
+                        var (name, slug) = GuessStoreFromUrl(r.Url);
+                        storeName ??= name;
+                        storeSlug ??= slug;
+                    }
+
+                    // Domain'i de URL'den al (RAWG her zaman dönmüyor)
+                    if (string.IsNullOrWhiteSpace(storeDomain))
+                    {
+                        try { storeDomain = new Uri(r.Url!).Host; } catch { /* yoksay */ }
+                    }
+
+                    return new StoreLink
+                    {
+                        StoreId = storeId == 0 ? null : storeId,
+                        Store = storeName,
+                        Slug = storeSlug,
+                        Domain = storeDomain,
+                        Url = r.Url,
+                        ExternalId = TryExtractSteamAppId(r.Url)
+                    };
+                })
+                .ToList();
+
+            detUpdate = detUpdate.Set(x => x.Store_Links, links);
+        }
+        catch
+        {
+            detUpdate = detUpdate.Set(x => x.Store_Links, new List<StoreLink>());
+        }
+
+
+
 
         // (opsiyonel) PC sistem gereksinimleri (varsa)
-        
+
 
         await _details.UpdateOneAsync(detFilter, detUpdate, new UpdateOptions { IsUpsert = true });
     }
@@ -411,6 +482,18 @@ public class RawgImportService
             { "recRequirement", "$recRequirement" },
             { "ageRatings", "$details.Age_Ratings" },
             { "dlcs", "$details.DLCs" },
+            { "engines", "$details.Engines" },
+            { "Awards", 1 },
+            { "audioLanguages", "$details.Audio_Language" },
+            { "subtitles", "$details.Subtitles" },
+            { "interfaceLanguages", "$details.Interface_Language" },
+            { "contentWarnings", "$details.Content_Warnings" },
+            { "stores", "$details.Store_Links" },
+            { "timeToBeat", new BsonDocument {
+        { "hastily", "$details.TimeToBeat_Hastily" },
+        { "normally", "$details.TimeToBeat_Normally" },
+        { "completely", "$details.TimeToBeat_Completely" }
+    }},
             { "tags", "$details.Tags" },
             { "genres", new BsonDocument("$map", new BsonDocument {
                 { "input", "$genreDocs" }, { "as", "g" }, { "in", "$$g.Name" }
@@ -428,44 +511,109 @@ public class RawgImportService
 
 
     private async Task<string?> UpsertMinRequirementAsync(string? text)
-{
-    if (string.IsNullOrWhiteSpace(text)) return null;
+    {
+        if (string.IsNullOrWhiteSpace(text)) return null;
 
-    var filter = Builders<MinRequirement>.Filter.Eq(x => x.Text, text);
-    var update = Builders<MinRequirement>.Update
-        .SetOnInsert(x => x.Id, ObjectId.GenerateNewId().ToString())
-        .SetOnInsert(x => x.Text, text.Trim());
+        var filter = Builders<MinRequirement>.Filter.Eq(x => x.Text, text);
+        var update = Builders<MinRequirement>.Update
+            .SetOnInsert(x => x.Id, ObjectId.GenerateNewId().ToString())
+            .SetOnInsert(x => x.Text, text.Trim());
 
-    var doc = await _minReqs.FindOneAndUpdateAsync(
-        filter, update,
-        new FindOneAndUpdateOptions<MinRequirement>
+        var doc = await _minReqs.FindOneAndUpdateAsync(
+            filter, update,
+            new FindOneAndUpdateOptions<MinRequirement>
+            {
+                IsUpsert = true,
+                ReturnDocument = ReturnDocument.After
+            });
+
+        return doc?.Id;
+    }
+
+    private async Task<string?> UpsertRecRequirementAsync(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return null;
+
+        var filter = Builders<RecRequirement>.Filter.Eq(x => x.Text, text);
+        var update = Builders<RecRequirement>.Update
+            .SetOnInsert(x => x.Id, ObjectId.GenerateNewId().ToString())
+            .SetOnInsert(x => x.Text, text.Trim());
+
+        var doc = await _recReqs.FindOneAndUpdateAsync(
+            filter, update,
+            new FindOneAndUpdateOptions<RecRequirement>
+            {
+                IsUpsert = true,
+                ReturnDocument = ReturnDocument.After
+            });
+
+        return doc?.Id;
+    }
+
+
+    private static string? TryExtractExternalId(RawgGameStoreItem r)
+    {
+        if (r?.Store?.Slug == null || r.Url == null) return null;
+
+        // Steam örneği: https://store.steampowered.com/app/271590/...
+        if (r.Store.Slug.Equals("steam", StringComparison.OrdinalIgnoreCase))
         {
-            IsUpsert = true,
-            ReturnDocument = ReturnDocument.After
-        });
+            // kaba ama iş gören bir ayıklama
+            var parts = r.Url.Split('/', StringSplitOptions.RemoveEmptyEntries);
+            var appIndex = Array.FindIndex(parts, p => p.Equals("app", StringComparison.OrdinalIgnoreCase));
+            if (appIndex >= 0 && appIndex + 1 < parts.Length)
+            {
+                var next = parts[appIndex + 1];
+                if (next.All(char.IsDigit))
+                    return next; // Steam AppID
+            }
+        }
 
-    return doc?.Id;
-}
+        // PS/Epic gibi yerler için şimdilik null; istersen slug/domain’e göre ek kural yazarsın
+        return null;
+    }
 
-private async Task<string?> UpsertRecRequirementAsync(string? text)
-{
-    if (string.IsNullOrWhiteSpace(text)) return null;
 
-    var filter = Builders<RecRequirement>.Filter.Eq(x => x.Text, text);
-    var update = Builders<RecRequirement>.Update
-        .SetOnInsert(x => x.Id, ObjectId.GenerateNewId().ToString())
-        .SetOnInsert(x => x.Text, text.Trim());
 
-    var doc = await _recReqs.FindOneAndUpdateAsync(
-        filter, update,
-        new FindOneAndUpdateOptions<RecRequirement>
+    private static (string? name, string? slug) GuessStoreFromUrl(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url)) return (null, null);
+        try
         {
-            IsUpsert = true,
-            ReturnDocument = ReturnDocument.After
-        });
+            var host = new Uri(url).Host.ToLowerInvariant();
 
-    return doc?.Id;
-}
+            if (host.Contains("steampowered.com")) return ("Steam", "steam");
+            if (host.Contains("playstation.com")) return ("PlayStation Store", "playstation-store");
+            if (host.Contains("xbox.com") || host.Contains("marketplace.xbox.com")) return ("Xbox Store", "xbox-store");
+            if (host.Contains("microsoft.com")) return ("Microsoft Store", "microsoft-store");
+            if (host.Contains("epicgames.com")) return ("Epic Games Store", "epic-games");
+            if (host.Contains("gog.com")) return ("GOG", "gog");
+            if (host.Contains("nintendo.com")) return ("Nintendo Store", "nintendo");
+            if (host.Contains("apps.apple.com")) return ("App Store", "app-store");
+            if (host.Contains("store.steampowered.com")) return ("Steam", "steam");
+
+            // bilinmiyorsa host'u slug gibi kullan
+            return (host, host.Replace(".", "-"));
+        }
+        catch { return (null, null); }
+    }
+
+    private static string? TryExtractSteamAppId(string? url)
+    {
+        // ör: https://store.steampowered.com/app/271590/...
+        if (string.IsNullOrWhiteSpace(url)) return null;
+        if (!url.Contains("steampowered.com", StringComparison.OrdinalIgnoreCase)) return null;
+
+        var parts = url.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        var idx = Array.FindIndex(parts, p => p.Equals("app", StringComparison.OrdinalIgnoreCase));
+        if (idx >= 0 && idx + 1 < parts.Length && parts[idx + 1].All(char.IsDigit))
+            return parts[idx + 1];
+
+        return null;
+    }
+    
+
+
 
 
 

@@ -44,6 +44,7 @@ public class RawgGameSummary
 
 public class RawgGameDetail : RawgGameSummary
 {
+    
     public List<RawgNameWrapper> Developers { get; set; } = new();
     public List<RawgNameWrapper> Publishers { get; set; } = new();
 
@@ -60,9 +61,49 @@ public class RawgGameDetail : RawgGameSummary
     public int? Playtime { get; set; }   // saat
     public string? Website { get; set; }
 
-     [JsonPropertyName("tags")]
+    [JsonPropertyName("tags")]
     public List<RawgTag> Tags { get; set; } = new();
+    
+    [JsonPropertyName("languages")]
+    public List<string> Languages { get; set; } = new();
+
+    [JsonPropertyName("languages_audio")]
+    public List<string> LanguagesAudio { get; set; } = new();
+
+    [JsonPropertyName("languages_subtitles")]
+    public List<string> LanguagesSubtitles { get; set; } = new();
+
+    [JsonPropertyName("content_warnings")]
+    public List<string> ContentWarnings { get; set; } = new();
+
+    [JsonPropertyName("game_engines")]
+    public List<RawgNameWrapper> GameEngines { get; set; } = new();
+
+
+    [JsonPropertyName("engines")]
+    public List<RawgNameWrapper> EnginesAlt { get; set; } = new();
+
+
+    
+    [JsonPropertyName("awards")]
+    public List<RawgAward> Awards { get; set; } = new();
+
+
 }
+
+public class RawgGameEngine
+{
+    public int Id { get; set; }
+    public string? Name { get; set; }
+}
+
+public class RawgAward
+{
+    public string? Name { get; set; }
+    public int? Year { get; set; }
+}
+
+
 
 public class RawgNameWrapper
 {
@@ -100,4 +141,28 @@ public class RawgAgeRating
     public int Id { get; set; }         // RAWG age rating id
     public string? Name { get; set; }   // e.g., "Mature"
     public string? Slug { get; set; }   // e.g., "mature"
+}
+
+public class RawgGameStoreItem
+{
+    public int Id { get; set; }
+
+    [JsonPropertyName("url")]
+    public string? Url { get; set; }
+
+    // Bazı yanıtlarda sadece bu geliyor
+    [JsonPropertyName("store_id")]
+    public int? StoreId { get; set; }
+
+    // Bazı yanıtlarda komple store objesi var
+    [JsonPropertyName("store")]
+    public RawgStoreInfo? Store { get; set; }
+}
+
+public class RawgStoreInfo
+{
+    public int Id { get; set; }
+    public string? Name { get; set; }
+    public string? Slug { get; set; }
+    public string? Domain { get; set; }   // Bu alan her zaman dolmayabilir
 }

@@ -112,6 +112,7 @@ public class IgdbImportService
 
             // 3) Game upsert (isim bazlı)
             var gameFilter = Builders<Game>.Filter.Eq(x => x.Game_Name, detail.Name);
+            
             var gameUpdate = Builders<Game>.Update
                 .Set(x => x.Release_Date, detail.ReleaseDate)
                 .Set(x => x.Metacritic_Rating, detail.Metacritic)
@@ -133,7 +134,10 @@ public class IgdbImportService
             var publisher = detail.Publishers.FirstOrDefault();
             var ageRatingNames = detail.AgeRatings.Distinct().ToList();
             var tagNames = detail.Tags.Distinct().ToList();
-
+            var ttb = await _igdb.GetTimeToBeatAsync(detail.Id, ct);
+            var awards = await _igdb.GetAwardsLikeEventsAsync(detail.Id, ct);
+            
+            
             var detUpdate = Builders<Game_Details>.Update
                 .Set(x => x.Developer, developer)
                 .Set(x => x.Publisher, publisher)
@@ -142,11 +146,38 @@ public class IgdbImportService
                 .Set(x => x.Story, detail.Summary)
                 .Set(x => x.Age_Ratings, ageRatingNames)
                 .Set(x => x.Tags, tagNames)
+                .Set(x => x.Engines, detail.Engines)
+                .Set(x => x.Audio_Language, detail.AudioLanguages ?? new List<string>())
+    .            Set(x => x.Subtitles, detail.Subtitles ?? new List<string>())
+                .Set(x => x.Interface_Language, detail.InterfaceLanguages ?? new List<string>())
+                .Set(x => x.Content_Warnings, detail.ContentWarnings ?? new List<string>())
                 .SetOnInsert(x => x.GameId, gameFromDb.Id)
                 .SetOnInsert(x => x.Id, ObjectId.GenerateNewId().ToString());
 
+        if (awards is { Count: > 0 })
+    detUpdate = detUpdate.Set(x => x.Awards, awards);
+
+        if (ttb != null)
+        {
+            int? ToMinutes(int? s) => s.HasValue ? s.Value / 3600 : (int?)null;
+
+            var h = ToMinutes(ttb.Hastily);
+            var n = ToMinutes(ttb.Normally);
+            var c = ToMinutes(ttb.Completely);
+
+            if (h.HasValue) detUpdate = detUpdate.Set(x => x.TimeToBeat_Hastily, h);
+            if (n.HasValue) detUpdate = detUpdate.Set(x => x.TimeToBeat_Normally, n);
+            if (c.HasValue) detUpdate = detUpdate.Set(x => x.TimeToBeat_Completely, c);
+        }
+
+        var storeLinks = await _igdb.GetStoreLinksAsync(detail.Id, ct);
+        if (storeLinks?.Count > 0)
+        {
+            detUpdate = detUpdate.Set(x => x.Store_Links, storeLinks);
+        }
+
             // IGDB sistem gereksinimi sağlamadığı için Min/Rec null bırakılır.
-            await _details.UpdateOneAsync(detFilter, detUpdate, new UpdateOptions { IsUpsert = true }, ct);
+        await _details.UpdateOneAsync(detFilter, detUpdate, new UpdateOptions { IsUpsert = true }, ct);
 
             // (opsiyonel) DLC/Additions (varsa)
             try
@@ -272,6 +303,12 @@ public class IgdbImportService
             new BsonDocument("$sort", new BsonDocument("Release_Date", -1)),
             new BsonDocument("$limit", limit),
 
+            new BsonDocument("$set", new BsonDocument {
+    { "details.GenreIds",    new BsonDocument("$ifNull", new BsonArray { "$details.GenreIds",    new BsonArray() }) },
+    { "details.PlatformIds", new BsonDocument("$ifNull", new BsonArray { "$details.PlatformIds", new BsonArray() }) },
+    { "details.Awards",      new BsonDocument("$ifNull", new BsonArray { "$details.Awards",      new BsonArray() }) } // NEW
+    }),
+
             // === RAWG ile birebir projection ===
             new BsonDocument("$project", new BsonDocument {
                 { "_id", 0 },
@@ -288,6 +325,18 @@ public class IgdbImportService
                 { "recRequirement", "$recRequirement" },   // <-- daima var (null olabilir)
                 { "ageRatings", "$details.Age_Ratings" },
                 { "dlcs", "$details.DLCs" },
+                { "audioLanguages", "$details.Audio_Language" },
+                { "subtitles", "$details.Subtitles" },
+                { "interfaceLanguages", "$details.Interface_Language" },
+                { "contentWarnings", "$details.Content_Warnings" },
+                { "storeLinks", "$details.Store_Links" },
+                { "timeToBeat", new BsonDocument {
+                { "hastily",    "$details.TimeToBeat_Hastily" },
+                { "normally",   "$details.TimeToBeat_Normally" },
+                { "completely", "$details.TimeToBeat_Completely" }
+                } },
+                { "engines", "$details.Engines" },
+                { "awards", "$details.Awards" },
                 { "tags", "$details.Tags" },
                 { "genres", new BsonDocument("$map", new BsonDocument {
                     { "input", "$genreDocs" }, { "as", "g" }, { "in", "$$g.Name" }

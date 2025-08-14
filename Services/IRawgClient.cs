@@ -14,4 +14,7 @@ public interface IRawgClient
 
     Task<RawgPaged<RawgGameSummary>> GetGameAdditionsAsync(int id);
 
+    Task<RawgPaged<RawgGameStoreItem>> GetGameStoresAsync(int id);
+
+
 }

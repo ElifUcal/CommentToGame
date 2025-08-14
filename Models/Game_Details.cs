@@ -36,7 +36,7 @@ public class Game_Details
     public string? Estimated_Playtime { get; set; }
 
     public List<string> Tags { get; set; } = new();
-    public string? Awards { get; set; }
+    public List<string> Awards { get; set; }
     public List<string> DLCs { get; set; } = new();
     public string? InspiredBy { get; set; }
 
@@ -53,4 +53,14 @@ public class Game_Details
     [BsonRepresentation(BsonType.ObjectId)]
     public string? RecRequirementId { get; set; }
     [BsonIgnore] public RecRequirement? RecRequirement { get; set; }
+
+    public int? TimeToBeat_Hastily { get; set; }
+    public int? TimeToBeat_Normally { get; set; }
+    public int? TimeToBeat_Completely { get; set; }
+
+    public List<StoreLink> Store_Links { get; set; } = new();
+
+    public List<string> Engines { get; set; } = new();
+
+
 }
