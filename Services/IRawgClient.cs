@@ -1,5 +1,6 @@
 using System.Threading.Tasks;
-using CommentToGame.DTOs;   // ← önemli
+using CommentToGame.DTOs;
+using CommentToGame.Models;   // ← önemli
 
 namespace CommentToGame.Services; // file-scoped ok
 
@@ -15,6 +16,12 @@ public interface IRawgClient
     Task<RawgPaged<RawgGameSummary>> GetGameAdditionsAsync(int id);
 
     Task<RawgPaged<RawgGameStoreItem>> GetGameStoresAsync(int id);
+
+    Task<RawgPagedCreators> GetGameDevelopmentTeamAsync(int id);
+
+    // IRawgClient.cs
+    Task<List<StoreLink>> GetStoreLinksAsync(int id, CancellationToken ct = default);
+
 
 
 }

@@ -41,6 +41,8 @@ public sealed class GameEditService
         if (body.Metacritic.HasValue)  gUpdates.Add(G.Set(x => x.Metacritic_Rating, body.Metacritic));
         if (body.GgDbRating.HasValue)  gUpdates.Add(G.Set(x => x.GgDb_Rating, body.GgDbRating));
         if (body.Popularity.HasValue)  gUpdates.Add(G.Set(x => x.Popularity, body.Popularity));
+        if (body.Cast != null) gUpdates.Add(G.Set(x => x.Cast, body.Cast));
+        if (body.Crew != null) gUpdates.Add(G.Set(x => x.Crew, body.Crew));
         if (!string.IsNullOrWhiteSpace(body.MainImage)) gUpdates.Add(G.Set(x => x.Main_image_URL, body.MainImage));
         if (!string.IsNullOrWhiteSpace(body.Studio))    gUpdates.Add(G.Set(x => x.Studio, body.Studio));
         if (!string.IsNullOrWhiteSpace(body.Name))      gUpdates.Add(G.Set(x => x.Game_Name, body.Name!.Trim()));
@@ -179,7 +181,7 @@ public sealed class GameEditService
             GgDbRating = g.GgDb_Rating,
             MainImage  = g.Main_image_URL,
             Popularity = g.Popularity,
-            Studio     = g.Studio,
+            
 
             Developer = d.Developer,
             Publisher = d.Publisher,

@@ -36,7 +36,7 @@ public class Game_Details
     public string? Estimated_Playtime { get; set; }
 
     public List<string> Tags { get; set; } = new();
-    public List<string> Awards { get; set; }
+    public List<string>? Awards { get; set; }
     public List<string> DLCs { get; set; } = new();
     public string? InspiredBy { get; set; }
 

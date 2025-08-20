@@ -44,7 +44,7 @@ public class RawgGameSummary
 
 public class RawgGameDetail : RawgGameSummary
 {
-    
+
     public List<RawgNameWrapper> Developers { get; set; } = new();
     public List<RawgNameWrapper> Publishers { get; set; } = new();
 
@@ -63,7 +63,7 @@ public class RawgGameDetail : RawgGameSummary
 
     [JsonPropertyName("tags")]
     public List<RawgTag> Tags { get; set; } = new();
-    
+
     [JsonPropertyName("languages")]
     public List<string> Languages { get; set; } = new();
 
@@ -84,9 +84,12 @@ public class RawgGameDetail : RawgGameSummary
     public List<RawgNameWrapper> EnginesAlt { get; set; } = new();
 
 
-    
+
     [JsonPropertyName("awards")]
     public List<RawgAward> Awards { get; set; } = new();
+
+    [JsonPropertyName("stores")]
+    public List<RawgGameStoreItem> Stores { get; set; } = new();
 
 
 }
@@ -166,3 +169,23 @@ public class RawgStoreInfo
     public string? Slug { get; set; }
     public string? Domain { get; set; }   // Bu alan her zaman dolmayabilir
 }
+
+public class RawgPagedCreators
+{
+    public int Count { get; set; }
+    public string? Next { get; set; }
+    public List<RawgCreator> Results { get; set; } = new();
+}
+
+public class RawgCreator
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = default!;
+    public List<RawgCreatorPosition> Positions { get; set; } = new();
+}
+
+public class RawgCreatorPosition
+{
+    public string Name { get; set; } = default!;
+}
+

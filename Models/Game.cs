@@ -14,7 +14,7 @@ public class Game
     public string? Studio { get; set; }
 
     public List<string> Cast { get; set; } = new();
-    public string? Soundtrack { get; set; }
+    public List<string>? Soundtrack { get; set; }
     public List<string> Crew { get; set; } = new();
 
     // Companies ayrı koleksiyon ise Id listesi

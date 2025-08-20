@@ -42,6 +42,9 @@ public sealed class UpdateGameDto
     // --- NEW: Engine(ler) & Ödüller ---
     public List<string>? Engines { get; set; }
     public List<string>? Awards { get; set; }
+
+    public List<string>? Cast { get; set; }   // <-- YENİ
+    public List<string>? Crew { get; set; }   // <-- YENİ
 }
 
 public sealed class StoreLinkDto

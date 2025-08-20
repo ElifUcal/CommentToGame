@@ -187,6 +187,47 @@ public class RawgImportService
             platformIds.Add(pUp.Id);
         }
 
+        // RAWG development team çek
+RawgPagedCreators team = new();
+try
+{
+    team = await _rawg.GetGameDevelopmentTeamAsync(detail.Id);
+}
+catch
+{
+    // sessiz geç, bazı oyunlarda olmayabilir
+}
+
+// cast/crew ayrımı: "voice", "actor", "voice actor" gibi anahtar kelimeler cast'a
+var castNames = new List<string>();
+var crewNames = new List<string>();
+
+if (team?.Results != null)
+{
+    foreach (var person in team.Results)
+    {
+        var posNames = person.Positions?.Select(p => p?.Name?.ToLowerInvariant() ?? "")
+                                       .Where(n => !string.IsNullOrWhiteSpace(n))
+                                       .ToList() ?? new List<string>();
+
+        bool isCast = posNames.Any(n =>
+            n.Contains("voice") || n.Contains("actor") || n.Contains("voice actor"));
+
+        if (isCast)
+            castNames.Add(person.Name);
+        else
+            crewNames.Add(person.Name);
+    }
+}
+
+// ekstra: RAWG "Developers"/"Publishers" şirket isimlerini de crew'a ekleyebilirsin
+crewNames.AddRange(detail.Developers?.Select(d => d.Name) ?? Enumerable.Empty<string>());
+crewNames.AddRange(detail.Publishers?.Select(p => p.Name) ?? Enumerable.Empty<string>());
+
+        castNames = castNames.Distinct().ToList();
+        crewNames = crewNames.Distinct().ToList();
+
+
         // 3) Game upsert (isim bazlı)
         var gameFilter = Builders<Game>.Filter.Eq(x => x.Game_Name, detail.Name);
         // 3) Game upsert (isim bazlı) – mevcut gameUpdate'ini genişlet
@@ -197,6 +238,8 @@ public class RawgImportService
             .Set(x => x.Popularity, detail.Added)                   // NEW
             .Set(x => x.Main_image_URL, detail.BackgroundImage)     // NEW
             .Set(x => x.CompanyIds, new List<string>())
+            .Set(x => x.Cast, castNames)     // ← NEW
+            .Set(x => x.Crew, crewNames)
             .SetOnInsert(x => x.Game_Name, detail.Name)
             .SetOnInsert(x => x.Id, ObjectId.GenerateNewId().ToString());
 
@@ -275,6 +318,62 @@ public class RawgImportService
             detUpdate = detUpdate.Set(x => x.RecRequirementId, recId);
 
         
+        // --- TAGS: ödül yakalama (case-insensitive) ---
+string[] awardHints = new[]
+{
+    "award",        // genel
+    "tga",          // The Game Awards
+    "game awards",
+    "bafta",
+    "dice",         // D.I.C.E. Awards
+    "goty",         // Game of the Year
+    "golden joystick",
+    "spike video game awards",
+    "navgtr",
+};
+
+bool LooksLikeAward(string s)
+{
+    if (string.IsNullOrWhiteSpace(s)) return false;
+    var t = s.Trim();
+    return awardHints.Any(h =>
+        t.IndexOf(h, StringComparison.OrdinalIgnoreCase) >= 0);
+}
+
+// var tagNames = ... (zaten sende var)
+var awardsFromTags = tagNames
+    .Where(LooksLikeAward)
+    .Distinct(StringComparer.OrdinalIgnoreCase)
+    .ToList();
+
+// (opsiyonel) Description’dan da tarayalım (About/Story)
+// Çok gürültü olmasın diye kısa bir çıkarım yapıyoruz:
+var awardsFromStory = new List<string>();
+if (!string.IsNullOrWhiteSpace(detail.DescriptionRaw))
+{
+    var story = detail.DescriptionRaw!;
+    if (story.IndexOf("Game of the Year", StringComparison.OrdinalIgnoreCase) >= 0)
+        awardsFromStory.Add("Game of the Year (mention)");
+    if (story.IndexOf("BAFTA", StringComparison.OrdinalIgnoreCase) >= 0)
+        awardsFromStory.Add("BAFTA (mention)");
+    if (story.IndexOf("The Game Awards", StringComparison.OrdinalIgnoreCase) >= 0
+        || story.IndexOf("TGA", StringComparison.OrdinalIgnoreCase) >= 0)
+        awardsFromStory.Add("The Game Awards (mention)");
+    if (story.IndexOf("D.I.C.E.", StringComparison.OrdinalIgnoreCase) >= 0
+        || story.IndexOf("DICE", StringComparison.OrdinalIgnoreCase) >= 0)
+        awardsFromStory.Add("D.I.C.E. Awards (mention)");
+}
+
+        var awardsFinal = awardsFromTags
+            .Concat(awardsFromStory)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        // detUpdate oluştururken:
+        detUpdate = detUpdate
+            .Set(x => x.Awards, awardsFinal);
+            
+
 
     
 
@@ -478,12 +577,14 @@ public class RawgImportService
             { "popularity", "$Popularity" },
             { "developer", "$details.Developer" },
             { "publisher", "$details.Publisher" },
+            { "cast", "$Cast" },    
+            { "crew", "$Crew" },
             { "minRequirement", "$minRequirement" },
             { "recRequirement", "$recRequirement" },
             { "ageRatings", "$details.Age_Ratings" },
             { "dlcs", "$details.DLCs" },
             { "engines", "$details.Engines" },
-            { "Awards", 1 },
+            { "awards", "$details.Awards" },
             { "audioLanguages", "$details.Audio_Language" },
             { "subtitles", "$details.Subtitles" },
             { "interfaceLanguages", "$details.Interface_Language" },
@@ -612,7 +713,14 @@ public class RawgImportService
         return null;
     }
     
+    public async Task<bool> ImportOneByIdAsync(int id, CancellationToken ct = default)
+{
+    var detail = await _rawg.GetGameDetailAsync(id);
+    if (detail is null) return false;
 
+    await UpsertOneAsync(detail); // mevcut private metodu kullan
+    return true;
+}
 
 
 

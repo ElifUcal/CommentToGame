@@ -27,8 +27,14 @@ namespace CommentToGame.DTOs
         public sealed class IgdbGameCard
         {
             public long Id { get; set; }
-            public string Name { get; set; } = string.Empty;
+            public string Name { get; set; } = "";
+            public int? Year { get; set; }
+            public string? Cover { get; set; }            // t_cover_big URL
+            public List<string> Platforms { get; set; } = new();
+            public string? Category { get; set; }         // Main Game / DLC / Remaster...
         }
+
+
 
         public sealed class IgdbGameDetail
         {
@@ -54,6 +60,15 @@ namespace CommentToGame.DTOs
             public List<string> ContentWarnings { get; init; } = new();
 
             public List<string> Engines { get; set; } = new();
+
+            public List<string> Awards { get; set; } = new();
+
+            public List<string> Cast { get; set; } = new();
+            public List<string> Crew { get; set; } = new();
+
+            public List<string> Dlcs { get; set; } = new();
+
+
         }
 
 
@@ -65,6 +80,8 @@ namespace CommentToGame.DTOs
             public int? Completely { get; set; }
             public int? Count { get; set; }
         }
+
+        
     
 
     }

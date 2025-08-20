@@ -112,12 +112,15 @@ public class IgdbImportService
 
             // 3) Game upsert (isim bazlı)
             var gameFilter = Builders<Game>.Filter.Eq(x => x.Game_Name, detail.Name);
+            var (cast, crew) = await _igdb.GetCreditsAsync(detail.Id, ct);
             
             var gameUpdate = Builders<Game>.Update
                 .Set(x => x.Release_Date, detail.ReleaseDate)
                 .Set(x => x.Metacritic_Rating, detail.Metacritic)
                 .Set(x => x.GgDb_Rating, detail.Rating.HasValue ? (int?)Math.Round(detail.Rating.Value) : null) // IGDB /100
                 .Set(x => x.Popularity, detail.Added)
+                .Set(x => x.Cast, cast)   // <-- YENİ
+                .Set(x => x.Crew, crew)
                 .Set(x => x.Main_image_URL, detail.BackgroundImage)
                 .Set(x => x.CompanyIds, new List<string>())
                 .SetOnInsert(x => x.Game_Name, detail.Name)
@@ -135,7 +138,11 @@ public class IgdbImportService
             var ageRatingNames = detail.AgeRatings.Distinct().ToList();
             var tagNames = detail.Tags.Distinct().ToList();
             var ttb = await _igdb.GetTimeToBeatAsync(detail.Id, ct);
-            var awards = await _igdb.GetAwardsLikeEventsAsync(detail.Id, ct);
+            var awards = detail.Awards?.Distinct().ToList() ?? new List<string>();
+            
+            
+
+
             
             
             var detUpdate = Builders<Game_Details>.Update
@@ -148,13 +155,13 @@ public class IgdbImportService
                 .Set(x => x.Tags, tagNames)
                 .Set(x => x.Engines, detail.Engines)
                 .Set(x => x.Audio_Language, detail.AudioLanguages ?? new List<string>())
-    .            Set(x => x.Subtitles, detail.Subtitles ?? new List<string>())
+                .Set(x => x.Subtitles, detail.Subtitles ?? new List<string>())
                 .Set(x => x.Interface_Language, detail.InterfaceLanguages ?? new List<string>())
                 .Set(x => x.Content_Warnings, detail.ContentWarnings ?? new List<string>())
                 .SetOnInsert(x => x.GameId, gameFromDb.Id)
                 .SetOnInsert(x => x.Id, ObjectId.GenerateNewId().ToString());
 
-        if (awards is { Count: > 0 })
+       if (awards.Count > 0)
     detUpdate = detUpdate.Set(x => x.Awards, awards);
 
         if (ttb != null)
@@ -175,6 +182,7 @@ public class IgdbImportService
         {
             detUpdate = detUpdate.Set(x => x.Store_Links, storeLinks);
         }
+        
 
             // IGDB sistem gereksinimi sağlamadığı için Min/Rec null bırakılır.
         await _details.UpdateOneAsync(detFilter, detUpdate, new UpdateOptions { IsUpsert = true }, ct);
@@ -198,12 +206,14 @@ public class IgdbImportService
             }
         }
 
-        // ============= (İsteğe bağlı) DB sorgu yardımcıları =============
-        public async Task<List<Game>> GetAllGamesAsync(int skip, int take)
-        {
-            if (skip < 0) skip = 0; if (take <= 0) take = 50;
-            return await _games.Find(FilterDefinition<Game>.Empty).Skip(skip).Limit(take).ToListAsync();
-        }
+
+
+    // ============= (İsteğe bağlı) DB sorgu yardımcıları =============
+    public async Task<List<Game>> GetAllGamesAsync(int skip, int take)
+    {
+        if (skip < 0) skip = 0; if (take <= 0) take = 50;
+        return await _games.Find(FilterDefinition<Game>.Empty).Skip(skip).Limit(take).ToListAsync();
+    }
 
         public async Task<List<Game>> SearchGamesInDbAsync(string q, int limit = 50)
         {
@@ -337,6 +347,8 @@ public class IgdbImportService
                 } },
                 { "engines", "$details.Engines" },
                 { "awards", "$details.Awards" },
+                { "cast", new BsonDocument("$ifNull", new BsonArray { "$Cast", new BsonArray() }) },
+                { "crew", new BsonDocument("$ifNull", new BsonArray { "$Crew", new BsonArray() }) },
                 { "tags", "$details.Tags" },
                 { "genres", new BsonDocument("$map", new BsonDocument {
                     { "input", "$genreDocs" }, { "as", "g" }, { "in", "$$g.Name" }

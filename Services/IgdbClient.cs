@@ -67,54 +67,80 @@ public sealed class IgdbClient : IIgdbClient
     }
 
     public async Task<IgdbPagedGames> SearchGamesAsync(string query, int page, int pageSize, CancellationToken ct = default)
+{
+    if (string.IsNullOrWhiteSpace(query)) query = "";
+    if (page <= 0) page = 1; if (pageSize <= 0) pageSize = 40;
+    var offset = (page - 1) * pageSize;
+    var safe = query.Replace("\"", "\\\"");
+
+    // games'ten alt alanları doğrudan getiriyoruz (cover.image_id, platforms.name, category)
+    var rows = await PostAsync<GameRowSearch>(
+        "games",
+        $"fields id,name,first_release_date,category,cover.image_id,platforms.name; " +
+        $"where name ~ \"{safe}\"*; limit {pageSize}; offset {offset};",
+        ct);
+
+    var items = rows.Select(r =>
     {
-        if (string.IsNullOrWhiteSpace(query)) query = "";
-        if (page <= 0) page = 1; if (pageSize <= 0) pageSize = 40;
-        var offset = (page - 1) * pageSize;
-        var safe = query.Replace("\"", "\\\"");
+        string? coverUrl = !string.IsNullOrWhiteSpace(r.cover?.image_id)
+            ? $"https://images.igdb.com/igdb/image/upload/t_cover_big/{r.cover.image_id}.jpg"
+            : null;
 
-        // 1) Önce ana oyunlar (version_parent = null)
-        var qParentFirst =
-            $"search \"{safe}\";" +
-            " fields id,name,first_release_date,genres,platforms,cover,age_ratings,keywords,involved_companies,version_parent,category,game_engines;" +
-            " where version_parent = null;" +
-            $" limit {pageSize}; offset {offset};";
+        int? year = r.first_release_date.HasValue
+            ? (int?) DateTimeOffset.FromUnixTimeSeconds(r.first_release_date.Value).UtcDateTime.Year
+            : null;
 
-        var games = await PostAsync<GameRow>("games", qParentFirst, ct);
-
-        // 2) Hiç yoksa filtresiz fallback
-        if (games.Length == 0)
+        return new IgdbGameCard
         {
-            var qAny =
-                $"search \"{safe}\";" +
-                " fields id,name,first_release_date,genres,platforms,cover,age_ratings,keywords,involved_companies,version_parent,category,game_engines;" +
-                $" limit {pageSize}; offset {offset};";
-            games = await PostAsync<GameRow>("games", qAny, ct);
-        }
-
-        // 3) Relevans sıralaması (tam eşleşme en öne)
-        static int Score(string? name, string q)
-        {
-            if (string.IsNullOrWhiteSpace(name)) return 0;
-            if (string.Equals(name, q, StringComparison.OrdinalIgnoreCase)) return 100;
-            var n = name.ToLowerInvariant();
-            var core = q.ToLowerInvariant();
-            if (n.StartsWith(core)) return 80;
-            if (n.Contains(core)) return 60;
-            return 0;
-        }
-
-        var ordered = games
-            .OrderByDescending(g => Score(g.name, query))
-            .ThenByDescending(g => g.first_release_date ?? 0) // aynı skor varsa daha güncel önce
-            .ToArray();
-
-        return new IgdbPagedGames
-        {
-            Results = ordered.Select(g => new IgdbGameCard { Id = g.id, Name = g.name ?? $"game-{g.id}" }).ToList(),
-            Next = ordered.Length < pageSize ? null : "next"
+            Id = r.id,
+            Name = r.name ?? $"game-{r.id}",
+            Year = year,
+            Cover = coverUrl,
+            Platforms = r.platforms?.Select(p => p.name).Where(n => !string.IsNullOrWhiteSpace(n)).Distinct().ToList() ?? new List<string>(),
+            Category = CatToText(r.category)
         };
-    }
+    }).ToList();
+
+    return new IgdbPagedGames
+    {
+        Results = items,
+        Next = rows.Length < pageSize ? null : "next"
+    };
+}
+
+// IGDB category enumunu metne çevir
+private static string? CatToText(long? cat) => cat switch
+{
+    0  => "Main Game",
+    1  => "DLC/Add-on",
+    2  => "Expansion",
+    3  => "Bundle",
+    4  => "Standalone Expansion",
+    5  => "Mod",
+    6  => "Episode",
+    7  => "Season",
+    8  => "Remake",
+    9  => "Remaster",
+    10 => "Expanded Game",
+    11 => "Port",
+    12 => "Fork",
+    13 => "Pack",
+    _  => null
+};
+
+// Bu arama modeli, cover/platform isimlerini embed eder
+private sealed class GameRowSearch
+{
+    public long id { get; set; }
+    public string? name { get; set; }
+    public long? first_release_date { get; set; }
+    public long? category { get; set; }
+    public CoverObj? cover { get; set; }
+    public PlatformObj[]? platforms { get; set; }
+    public sealed class CoverObj { public string? image_id { get; set; } }
+    public sealed class PlatformObj { public string? name { get; set; } }
+}
+
 
     public async Task<List<StoreLink>> GetStoreLinksAsync(long gameId, CancellationToken ct = default)
     {
@@ -227,6 +253,7 @@ public sealed class IgdbClient : IIgdbClient
         var (developers, publishers) = await ResolveCompaniesAsync(g.involved_companies, ct);
         var ageNames = await ResolveAgeRatingsAsync(g.age_ratings, ct);
         var tagNames = g.keywords is { Length: > 0 } ? await ResolveKeywordsAsync(g.keywords!, ct) : new List<string>();
+        var awards = ExtractAwardsFromTags(tagNames);
 
         string? coverUrl = null;
         if (g.cover.HasValue)
@@ -260,6 +287,7 @@ public sealed class IgdbClient : IIgdbClient
             Publishers = publishers,
             AgeRatings = ageNames,
             Tags = tagNames,
+            Awards = awards,
             Engines = engineNames,
             AudioLanguages = audioLangs,
             Subtitles = subtitleLangs,
@@ -317,46 +345,46 @@ public sealed class IgdbClient : IIgdbClient
     }
 
     public async Task<List<string>> GetAwardsLikeEventsAsync(long gameId, CancellationToken ct = default)
-{
-    // Oyunun yer aldığı etkinlikleri çek
-    var rows = await PostAsync<EventRow>(
-        "events",
-        $"fields id,name,start_time,games; where games = {gameId}; limit 200;",
-        ct);
-
-    static bool LooksLikeAward(string s)
     {
-        var n = s.ToLowerInvariant();
-        // Basit bir sezgisel filtre: award/bafta/d.i.c.e/golden joystick gibi
-        return n.Contains("award")
-            || n.Contains("bafta")
-            || n.Contains("d.i.c.e")
-            || n.Contains("golden joystick")
-            || n.Contains("gdc awards");
+        // Oyunun yer aldığı etkinlikleri çek
+        var rows = await PostAsync<EventRow>(
+            "events",
+            $"fields id,name,start_time,games; where games = {gameId}; limit 200;",
+            ct);
+
+        static bool LooksLikeAward(string s)
+        {
+            var n = s.ToLowerInvariant();
+            // Basit bir sezgisel filtre: award/bafta/d.i.c.e/golden joystick gibi
+            return n.Contains("award")
+                || n.Contains("bafta")
+                || n.Contains("d.i.c.e")
+                || n.Contains("golden joystick")
+                || n.Contains("gdc awards");
+        }
+
+        static string YearSuffix(long? epoch)
+        {
+            if (epoch is null) return "";
+            var y = DateTimeOffset.FromUnixTimeSeconds(epoch.Value).UtcDateTime.Year;
+            return $" ({y})";
+        }
+
+        return rows
+            .Where(e => !string.IsNullOrWhiteSpace(e.name) && LooksLikeAward(e.name!))
+            .OrderBy(e => e.start_time ?? 0)
+            .Select(e => $"{e.name}{YearSuffix(e.start_time)}")
+            .Distinct()
+            .ToList();
     }
 
-    static string YearSuffix(long? epoch)
+    private sealed class EventRow
     {
-        if (epoch is null) return "";
-        var y = DateTimeOffset.FromUnixTimeSeconds(epoch.Value).UtcDateTime.Year;
-        return $" ({y})";
+        public long id { get; set; }
+        public string? name { get; set; }
+        public long? start_time { get; set; }
+        public long[]? games { get; set; }
     }
-
-    return rows
-        .Where(e => !string.IsNullOrWhiteSpace(e.name) && LooksLikeAward(e.name!))
-        .OrderBy(e => e.start_time ?? 0)
-        .Select(e => $"{e.name}{YearSuffix(e.start_time)}")
-        .Distinct()
-        .ToList();
-}
-
-private sealed class EventRow
-{
-    public long id { get; set; }
-    public string? name { get; set; }
-    public long? start_time { get; set; }
-    public long[]? games { get; set; }
-}
 
     private async Task<List<string>> ResolveContentWarningsAsync(long[]? ageRatingIds, CancellationToken ct)
     {
@@ -389,6 +417,7 @@ private sealed class EventRow
     private sealed class LangSupportRow { public long? language { get; set; } public long? language_support_type { get; set; } }
     private sealed class AgeRatingWithContentRow { public long id { get; set; } public long[]? content_descriptions { get; set; } }
     private sealed class ContentDescRow { public long id { get; set; } public string? description { get; set; } }
+
 
 
 
@@ -558,157 +587,188 @@ private sealed class EventRow
         public long[]? age_ratings { get; set; }
         public long[]? keywords { get; set; }
         public long[]? involved_companies { get; set; }
-        public long[]? game_engines { get; set; } 
+        public long[]? game_engines { get; set; }
     }
     private sealed class IdNameRow { public long id { get; set; } public string? name { get; set; } }
     private sealed class CoverRow { public long id { get; set; } public string? image_id { get; set; } }
-    private sealed class InvolvedCompanyRow { public long id { get; set; } public long? company { get; set; } public bool? developer { get; set; } public bool? publisher { get; set; } }
+    private sealed class InvolvedCompanyRow
+{
+    public long id { get; set; }
+    public long? company { get; set; }
+    public bool? developer { get; set; }
+    public bool? publisher { get; set; }
+    public bool? supporting { get; set; } // <-- ekle
+    public bool? porting { get; set; }    // <-- opsiyonel (istersen)
+    public long? game { get; set; }       // <-- opsiyonel (sorguda kullanıyorsun)
+}
     private sealed class AgeRatingRow { public long id { get; set; } public long? category { get; set; } public long? rating { get; set; } }
 
 
     private static StoreLink? MakeStoreLinkFromUrl(string raw, bool includeAmazon)
-{
-    if (!Uri.TryCreate(raw, UriKind.Absolute, out var uri)) return null;
-    var host = uri.Host.ToLowerInvariant();
-
-    bool isStoreHost = StoreHosts.Any(h => host.Contains(h)) || (includeAmazon && host.Contains("amazon."));
-    if (!isStoreHost) return null; // sadece mağaza
-
-    // Steam
-    if (host.Contains("steampowered.com"))
     {
-        var m = Regex.Match(uri.AbsolutePath, @"/app/(\d+)", RegexOptions.IgnoreCase);
-        return new StoreLink {
-            Store = "Steam", Slug = "steam",
-            Domain = "store.steampowered.com",
-            Url = $"https://store.steampowered.com/app/{(m.Success ? m.Groups[1].Value : "").TrimEnd('/')}",
-            ExternalId = m.Success ? m.Groups[1].Value : null
-        };
-    }
+        if (!Uri.TryCreate(raw, UriKind.Absolute, out var uri)) return null;
+        var host = uri.Host.ToLowerInvariant();
 
-    // Epic Games Store (hem eski /product hem yeni /p yollarını destekle)
-    if (host.Contains("epicgames.com"))
-    {
-        var m1 = Regex.Match(uri.AbsolutePath, @"/p/([^/?#]+)", RegexOptions.IgnoreCase);
-        var m2 = Regex.Match(uri.AbsolutePath, @"/product/([^/?#]+)", RegexOptions.IgnoreCase);
-        var slug = m1.Success ? m1.Groups[1].Value : (m2.Success ? m2.Groups[1].Value : null);
-        return new StoreLink {
-            Store = "Epic Games Store", Slug = "epic-games",
-            Domain = "store.epicgames.com",
-            Url = slug != null ? $"https://store.epicgames.com/p/{slug}" : raw,
-            ExternalId = slug
-        };
-    }
+        bool isStoreHost = StoreHosts.Any(h => host.Contains(h)) || (includeAmazon && host.Contains("amazon."));
+        if (!isStoreHost) return null; // sadece mağaza
 
-    // GOG
-    if (host.Contains("gog.com"))
-    {
-        var m = Regex.Match(uri.AbsolutePath, @"/game/([^/?#]+)", RegexOptions.IgnoreCase);
-        return new StoreLink {
-            Store = "GOG", Slug = "gog",
-            Domain = "www.gog.com",
-            Url = raw,
-            ExternalId = m.Success ? m.Groups[1].Value : null
-        };
-    }
+        // Steam
+        if (host.Contains("steampowered.com"))
+        {
+            var m = Regex.Match(uri.AbsolutePath, @"/app/(\d+)", RegexOptions.IgnoreCase);
+            return new StoreLink
+            {
+                Store = "Steam",
+                Slug = "steam",
+                Domain = "store.steampowered.com",
+                Url = $"https://store.steampowered.com/app/{(m.Success ? m.Groups[1].Value : "").TrimEnd('/')}",
+                ExternalId = m.Success ? m.Groups[1].Value : null
+            };
+        }
 
-    // PlayStation Store (concept/product)
-    if (host.Contains("playstation.com"))
-    {
-        var m = Regex.Match(uri.AbsolutePath, @"/(concept|product)/([A-Z0-9\-_]+)", RegexOptions.IgnoreCase);
-        return new StoreLink {
-            Store = "PlayStation Store", Slug = "playstation-store",
-            Domain = "store.playstation.com",
-            Url = raw,
-            ExternalId = m.Success ? m.Groups[2].Value : null
-        };
-    }
+        // Epic Games Store (hem eski /product hem yeni /p yollarını destekle)
+        if (host.Contains("epicgames.com"))
+        {
+            var m1 = Regex.Match(uri.AbsolutePath, @"/p/([^/?#]+)", RegexOptions.IgnoreCase);
+            var m2 = Regex.Match(uri.AbsolutePath, @"/product/([^/?#]+)", RegexOptions.IgnoreCase);
+            var slug = m1.Success ? m1.Groups[1].Value : (m2.Success ? m2.Groups[1].Value : null);
+            return new StoreLink
+            {
+                Store = "Epic Games Store",
+                Slug = "epic-games",
+                Domain = "store.epicgames.com",
+                Url = slug != null ? $"https://store.epicgames.com/p/{slug}" : raw,
+                ExternalId = slug
+            };
+        }
 
-    // Xbox / Microsoft Store
-    if (host.Contains("xbox.com") || host.Contains("microsoft.com"))
-    {
-        var m = Regex.Match(uri.AbsolutePath, @"/store/[^/]+/[^/]+/([A-Z0-9]{10,})", RegexOptions.IgnoreCase);
-        var q = System.Web.HttpUtility.ParseQueryString(uri.Query);
-        var pid = m.Success ? m.Groups[1].Value : (q["productId"] ?? q["ProductId"]);
-        return new StoreLink {
-            Store = "Xbox Store", Slug = "xbox-store",
-            Domain = host,
-            Url = raw,
-            ExternalId = string.IsNullOrWhiteSpace(pid) ? null : pid
-        };
-    }
+        // GOG
+        if (host.Contains("gog.com"))
+        {
+            var m = Regex.Match(uri.AbsolutePath, @"/game/([^/?#]+)", RegexOptions.IgnoreCase);
+            return new StoreLink
+            {
+                Store = "GOG",
+                Slug = "gog",
+                Domain = "www.gog.com",
+                Url = raw,
+                ExternalId = m.Success ? m.Groups[1].Value : null
+            };
+        }
 
-    // Nintendo eShop (ülke alt alanları çok değişken; ExternalId yoksa boş geç)
-    if (host.Contains("nintendo"))
-    {
-        return new StoreLink {
-            Store = "Nintendo eShop", Slug = "nintendo-eshop",
-            Domain = host,
-            Url = raw
-        };
-    }
+        // PlayStation Store (concept/product)
+        if (host.Contains("playstation.com"))
+        {
+            var m = Regex.Match(uri.AbsolutePath, @"/(concept|product)/([A-Z0-9\-_]+)", RegexOptions.IgnoreCase);
+            return new StoreLink
+            {
+                Store = "PlayStation Store",
+                Slug = "playstation-store",
+                Domain = "store.playstation.com",
+                Url = raw,
+                ExternalId = m.Success ? m.Groups[2].Value : null
+            };
+        }
 
-    // Apple App Store
-    if (host.Contains("apps.apple.com"))
-    {
-        var m = Regex.Match(raw, @"id(\d+)");
-        return new StoreLink {
-            Store = "App Store", Slug = "app-store",
-            Domain = "apps.apple.com",
-            Url = raw,
-            ExternalId = m.Success ? m.Groups[1].Value : null
-        };
-    }
+        // Xbox / Microsoft Store
+        if (host.Contains("xbox.com") || host.Contains("microsoft.com"))
+        {
+            var m = Regex.Match(uri.AbsolutePath, @"/store/[^/]+/[^/]+/([A-Z0-9]{10,})", RegexOptions.IgnoreCase);
+            var q = System.Web.HttpUtility.ParseQueryString(uri.Query);
+            var pid = m.Success ? m.Groups[1].Value : (q["productId"] ?? q["ProductId"]);
+            return new StoreLink
+            {
+                Store = "Xbox Store",
+                Slug = "xbox-store",
+                Domain = host,
+                Url = raw,
+                ExternalId = string.IsNullOrWhiteSpace(pid) ? null : pid
+            };
+        }
 
-    // Google Play
-    if (host.Contains("play.google.com"))
-    {
-        var q = System.Web.HttpUtility.ParseQueryString(uri.Query);
-        var id = q["id"];
-        return new StoreLink {
-            Store = "Google Play", Slug = "google-play",
-            Domain = "play.google.com",
-            Url = raw,
-            ExternalId = string.IsNullOrWhiteSpace(id) ? null : id
-        };
-    }
+        // Nintendo eShop (ülke alt alanları çok değişken; ExternalId yoksa boş geç)
+        if (host.Contains("nintendo"))
+        {
+            return new StoreLink
+            {
+                Store = "Nintendo eShop",
+                Slug = "nintendo-eshop",
+                Domain = host,
+                Url = raw
+            };
+        }
 
-    // itch.io
-    if (host.EndsWith("itch.io"))
-    {
-        var m = Regex.Match(uri.AbsolutePath, @"/([^/?#]+)/?$");
-        return new StoreLink {
-            Store = "itch.io", Slug = "itch-io",
-            Domain = host,
-            Url = raw,
-            ExternalId = m.Success ? m.Groups[1].Value : null
-        };
-    }
+        // Apple App Store
+        if (host.Contains("apps.apple.com"))
+        {
+            var m = Regex.Match(raw, @"id(\d+)");
+            return new StoreLink
+            {
+                Store = "App Store",
+                Slug = "app-store",
+                Domain = "apps.apple.com",
+                Url = raw,
+                ExternalId = m.Success ? m.Groups[1].Value : null
+            };
+        }
 
-    // Humble
-    if (host.Contains("humblebundle.com"))
-    {
-        return new StoreLink {
-            Store = "Humble Store", Slug = "humble",
-            Domain = "www.humblebundle.com",
-            Url = raw
-        };
-    }
+        // Google Play
+        if (host.Contains("play.google.com"))
+        {
+            var q = System.Web.HttpUtility.ParseQueryString(uri.Query);
+            var id = q["id"];
+            return new StoreLink
+            {
+                Store = "Google Play",
+                Slug = "google-play",
+                Domain = "play.google.com",
+                Url = raw,
+                ExternalId = string.IsNullOrWhiteSpace(id) ? null : id
+            };
+        }
 
-    // Amazon (opsiyonel)
-    if (includeAmazon && host.Contains("amazon."))
-    {
-        var m = Regex.Match(uri.AbsolutePath, @"/dp/([A-Z0-9]{8,})", RegexOptions.IgnoreCase);
-        return new StoreLink {
-            Store = "Amazon", Slug = "amazon",
-            Domain = host,
-            Url = raw,
-            ExternalId = m.Success ? m.Groups[1].Value : null
-        };
-    }
+        // itch.io
+        if (host.EndsWith("itch.io"))
+        {
+            var m = Regex.Match(uri.AbsolutePath, @"/([^/?#]+)/?$");
+            return new StoreLink
+            {
+                Store = "itch.io",
+                Slug = "itch-io",
+                Domain = host,
+                Url = raw,
+                ExternalId = m.Success ? m.Groups[1].Value : null
+            };
+        }
 
-    return null; // bilinmeyen host → alma
-}
+        // Humble
+        if (host.Contains("humblebundle.com"))
+        {
+            return new StoreLink
+            {
+                Store = "Humble Store",
+                Slug = "humble",
+                Domain = "www.humblebundle.com",
+                Url = raw
+            };
+        }
+
+        // Amazon (opsiyonel)
+        if (includeAmazon && host.Contains("amazon."))
+        {
+            var m = Regex.Match(uri.AbsolutePath, @"/dp/([A-Z0-9]{8,})", RegexOptions.IgnoreCase);
+            return new StoreLink
+            {
+                Store = "Amazon",
+                Slug = "amazon",
+                Domain = host,
+                Url = raw,
+                ExternalId = m.Success ? m.Groups[1].Value : null
+            };
+        }
+
+        return null; // bilinmeyen host → alma
+    }
 
     private static string GuessStoreName(string host)
     {
@@ -720,10 +780,10 @@ private sealed class EventRow
     // --- IGDB row modelleri ---
     private sealed class WebsiteRow { public long id { get; set; } public long? category { get; set; } public string? url { get; set; } }
     private sealed class ExternalGameRow { public long id { get; set; } public long? category { get; set; } public string? url { get; set; } public string? uid { get; set; } }
-    
+
     // ---- YALNIZ MAĞAZA ALLOW-LIST ----
-private static readonly string[] StoreHosts =
-{
+    private static readonly string[] StoreHosts =
+    {
     "steampowered.com",
     "epicgames.com",
     "gog.com",
@@ -738,7 +798,101 @@ private static readonly string[] StoreHosts =
     // "amazon."  // isteğe bağlı
 };
 
+    private static readonly Regex _awardRx = new(
+        "(\\baward\\b|\\bawards\\b|bafta|golden joystick|d\\.i\\.c\\.e|dice awards|game developers choice|the game awards|spike video game awards)",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    private static List<string> ExtractAwardsFromTags(List<string> tags) =>
+        tags.Where(t => !string.IsNullOrWhiteSpace(t) && _awardRx.IsMatch(t))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+
+
+    public async Task<(List<string> cast, List<string> crew)> GetCreditsAsync(long gameId, CancellationToken ct = default)
+{
+    // ---- CREW: involved_companies -> companies ----
+    var inv = await PostAsync<InvolvedCompanyRow>(
+    "involved_companies",
+    $"fields id,company,developer,publisher,supporting,porting,game; where game = {gameId}; limit 200;",
+    ct);
+
+
+    var companyIds = inv.Where(i => i.company.HasValue).Select(i => i.company!.Value).Distinct().ToArray();
+    var nameById = new Dictionary<long, string>();
+    if (companyIds.Length > 0)
+    {
+        var comps = await PostAsync<IdNameRow>(
+            "companies",
+            $"fields id,name; where id = ({string.Join(',', companyIds)}); limit 500;",
+            ct);
+        nameById = comps.ToDictionary(c => c.id, c => c.name ?? $"company-{c.id}");
+    }
+
+    var crew = new List<string>();
+    foreach (var i in inv)
+    {
+        if (i.company is null) continue;
+        var n = nameById.TryGetValue(i.company.Value, out var nm) ? nm : $"company-{i.company}";
+        var role = i.developer == true ? "Developer"
+                 : i.publisher == true ? "Publisher"
+                 : i.supporting == true ? "Support"
+                 : "Company";
+        crew.Add($"{n} ({role})");
+    }
+    crew = crew.Distinct().ToList();
+
+    // ---- CAST (voice actors): characters -> people ----
+    // Bu ilişki her oyunda dolu olmayabilir; boş gelirse problem değil.
+    var cast = new List<string>();
+    try
+    {
+        var chars = await PostAsync<CharacterRow>(
+            "characters",
+            $"fields id,name,people,games; where games = ({gameId}); limit 500;",
+            ct);
+
+        var peopleIds = chars.Where(c => c.people is { Length: > 0 })
+                             .SelectMany(c => c.people!)
+                             .Distinct()
+                             .ToArray();
+
+        if (peopleIds.Length > 0)
+        {
+            var people = await PostAsync<PersonRow>(
+                "people",
+                $"fields id,name; where id = ({string.Join(',', peopleIds)}); limit 500;",
+                ct);
+            cast = people.Select(p => p.name ?? $"person-{p.id}")
+                         .Distinct()
+                         .ToList();
+        }
+    }
+    catch
+    {
+        // characters/people endpoint’leri veri yoksa ya da model farklıysa boş bırak.
+    }
+
+    return (cast, crew);
 }
+
+// MODELLERE ekle:
+private sealed class CharacterRow { public long id { get; set; } public string? name { get; set; } public long[]? people { get; set; } }
+private sealed class PersonRow    { public long id { get; set; } public string? name { get; set; } }
+
+
+private sealed class CreditRow
+{
+    public long id { get; set; }
+    public long? person { get; set; }
+    public long? character { get; set; }
+    public bool? voice_actor { get; set; } // opsiyonel, gerekirse kullanırız
+}
+
+    
+
+}
+
 
 
 

@@ -4,6 +4,8 @@ using System.Linq;
 using System.Threading.Tasks;
 using CommentToGame.Models;
 using static CommentToGame.DTOs.IGdbDto;
+using System.Text.RegularExpressions;
+
 
 namespace CommentToGame.Services
 {
@@ -26,6 +28,8 @@ namespace CommentToGame.Services
         Task<List<StoreLink>> GetStoreLinksAsync(long gameId, CancellationToken ct = default);
 
         Task<List<string>> GetAwardsLikeEventsAsync(long gameId, CancellationToken ct = default);
+
+        Task<(List<string> cast, List<string> crew)> GetCreditsAsync(long gameId, CancellationToken ct = default);
 
     }
 }
