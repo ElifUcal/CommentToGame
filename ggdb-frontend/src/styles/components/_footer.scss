@@ -1,0 +1,119 @@
+/* ===== GGDB Footer ===== */
+$bg: #000;
+$text: #e5e7eb;
+$muted: #9aa3af;
+$border: rgba(255,255,255,0.1);
+$logo-yellow: #f5c21a;
+
+.ggdb-footer {
+  background: $bg;
+  color: $text;
+  padding: 36px 16px 48px;
+  z-index: 3;
+  position: relative;
+
+  &__top {
+    max-width: 980px;
+    margin: 0 auto 26px;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(280px, 1fr));
+    gap: 24px;
+    justify-content: center;
+  }
+
+&__card {
+    border: 1px solid $border;
+    border-radius: 10px;
+    padding: 18px 22px;
+    /* eskiden: display:flex; align-items:center; justify-content:space-between; */
+    display: flex;
+    flex-direction: column;   /* ALT ALTA */
+    align-items: center;  /* sola hizala */
+    justify-content: center;  /* dikeyde ortala */
+    gap: 8px;                 /* başlık ile içerik arası boşluk */
+    min-height: 64px;
+    background: rgba(255,255,255,0.02);
+  }
+
+  &__cardTitle {
+    font-weight: 700;
+    font-size: 16px;
+  }
+
+  &__sub {
+    margin-left: 0;
+    color: $muted;
+    font-size: 14px;
+    font-weight: 600;
+  }
+
+  &__icons {
+    display: inline-flex;
+    gap: 14px;
+    margin-top: 0;
+
+    a {
+      color: $text;
+      opacity: 0.95;
+      display: inline-flex;
+      padding: 6px;
+      border-radius: 8px;
+
+      &:hover { opacity: 1; background: rgba(255,255,255,0.06); }
+      svg { display: block; }
+    }
+  }
+
+  &__links {
+    max-width: 1100px;
+    margin: 8px auto 38px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 18px;
+    justify-content: center;
+  }
+
+  &__link {
+    color: $muted;
+    text-decoration: none;
+    font-size: 14px;
+    white-space: nowrap;
+
+    &:hover { color: lighten($muted, 8%); text-decoration: underline; }
+  }
+
+  &__brand {
+    text-align: center;
+    margin-top: 8px;
+  }
+
+  &__logo {
+    color: $logo-yellow;
+    font-weight: 800;
+    font-size: 24px;
+    letter-spacing: .5px;
+    margin-bottom: 6px;
+  }
+
+  &__tag {
+    color: $muted;
+    font-weight: 700;
+    font-size: 12.5px;
+  }
+}
+
+/* Responsive */
+@media (max-width: 720px) {
+  .ggdb-footer {
+    padding: 28px 12px 40px;
+
+    &__top {
+      grid-template-columns: 1fr;
+      gap: 14px;
+      margin-bottom: 18px;
+    }
+
+    &__card { padding: 16px 18px; }
+    &__links { gap: 14px; }
+  }
+}

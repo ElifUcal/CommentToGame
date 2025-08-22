@@ -1,0 +1,523 @@
+/* src/styles/pages/_register.scss */
+
+$bg-img: '../../assets/registerbg.avif';
+$c-yellow: #facc15;
+$c-yellow-600: #eab308;
+$c-white-70: rgba(255,255,255,.7);
+$c-white-60: rgba(255,255,255,.6);
+$c-white-15: rgba(255,255,255,.15);
+$c-white-10: rgba(255,255,255,.10);
+$c-white-05: rgba(255,255,255,.05);
+$c-black-30: rgba(0,0,0,.30);
+$c-black-40: rgba(0,0,0,.40);
+
+@mixin glass {
+  backdrop-filter: blur(1px);
+  background: rgba(0,0,0,.6);
+  border: 1px solid $c-white-10;
+  box-shadow: 0 20px 50px rgba(0,0,0,.5);
+}
+
+@mixin input-base {
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid $c-white-15;
+  background: $c-black-40;
+  color: #fff;
+  padding: 12px 16px;
+  outline: none;
+  transition: box-shadow .2s ease, border-color .2s ease, background .2s ease;
+
+  &::placeholder { color: $c-white-60; }
+  &:focus {
+    box-shadow: 0 0 0 3px rgba(250,204,21,.35);
+    border-color: $c-yellow;
+  }
+  &:disabled {
+    background: $c-black-30;
+    color: $c-white-70;
+    cursor: not-allowed;
+  }
+}
+
+@mixin btn-primary {
+  display: inline-block;
+  width: 100%;
+  border: 0;
+  border-radius: 12px;
+  padding: 12px 16px;
+  background: $c-yellow;
+  color: #111;
+  font-weight: 700;
+  cursor: pointer;
+  transition: filter .15s ease, transform .05s ease;
+
+  &:hover { filter: brightness(1.05); }
+  &:active { transform: translateY(1px); }
+  &:disabled { opacity: .6; cursor: not-allowed; }
+}
+
+/* === PAGE === */
+.register-page {
+  position: relative;
+  color: #fff;
+
+  /* Sticky layout içinde ortalama */
+  min-height: 100%;
+  display: flex;
+
+  /* BG image + gradient (page ile sınırlı) */
+  &::before,
+  &::after {
+    content: "";
+    position: absolute;   /* fixed DEĞİL */
+    inset: 0;
+    pointer-events: none;
+  }
+  &::before {
+    background: url(#{$bg-img}) center/cover no-repeat;
+    z-index: 0;
+    transition: transform 1s ease;
+  }
+  &::after {
+    background: linear-gradient(to top, #000 0%, rgba(0,0,0,.5) 60%, rgba(0,0,0,.3) 100%);
+    z-index: 1;
+  }
+
+  .register-inner {
+    position: relative;
+    z-index: 2;
+    flex: 1;
+    display: flex;               /* tam merkezleme */
+    align-items: center;
+    justify-content: center;
+    padding: clamp(16px, 4vw, 40px);
+  }
+
+  /* === CARD === */
+  .register-card {
+    @include glass;
+    width: min(500px, 100vw);     /* 1. görseldeki oran */
+    border-radius: 20px;
+    overflow: hidden;
+
+    .card-body {
+      padding: clamp(20px, 4vw, 40px);
+    }
+
+    h1.title {
+      font-size: clamp(28px, 3.2vw, 38px);
+      font-weight: 800;
+      margin: 0 0 8px;
+    }
+    p.subtitle {
+      color: $c-white-70;
+      margin: 0 0 8px;
+    }
+
+    /* Step bar */
+    .stepbar {
+      margin-top: 18px;
+
+      .track {
+        height: 6px;
+        background: $c-white-10;
+        border-radius: 999px;
+        overflow: hidden;
+
+        .progress {
+          height: 100%;
+          width: 50%;            /* JS ile %100'e geç */
+          background: $c-yellow;
+          transition: width .25s ease;
+        }
+      }
+      .labels {
+        display: flex;
+        justify-content: space-between;
+        margin-top: 8px;
+        font-size: 14px;
+        color: $c-white-70;
+
+        .active { color: #fff; }
+      }
+    }
+
+    /* Alerts */
+    .alert {
+      margin-top: 14px;
+      padding: 12px 14px;
+      border-radius: 10px;
+      font-size: 14px;
+
+      &.error {
+        background: rgba(239,68,68,.15);
+        border: 1px solid rgba(239,68,68,.35);
+        color: #fecaca;
+      }
+      &.ok {
+        background: rgba(16,185,129,.15);
+        border: 1px solid rgba(16,185,129,.35);
+        color: #bbf7d0;
+      }
+    }
+
+    /* Forms */
+    form {
+      margin-top: 18px;
+
+      label {
+        display: block;
+        font-size: 14px;
+        margin: 0 0 6px;
+      }
+
+      .input,
+      .select,
+      .date-month,
+      .date-day,
+      .date-year {
+        @include input-base;
+      }
+
+      .date-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr;
+        gap: 12px;
+      }
+
+      .input-with-toggle {
+        position: relative;
+
+        .toggle {
+          position: absolute;
+          right: 10px;
+          top: 50%;
+          transform: translateY(-50%);
+          color: $c-white-70;
+          font-size: 13px;
+          background: transparent;
+          border: 0;
+          cursor: pointer;
+        }
+      }
+
+      .btn-primary { @include btn-primary; margin-top: 16px; }
+
+      .back-link {
+        display: inline-block;
+        margin-top: 8px;
+        color: rgba(250, 204, 21, .9);
+        text-decoration: none;
+
+        &:hover { color: $c-yellow; text-decoration: underline; }
+      }
+
+      .muted {
+        margin-top: 14px;
+        text-align: center;
+        font-size: 14px;
+        color: $c-white-70;
+
+        a {
+          color: $c-yellow;
+          text-decoration: none;
+          &:hover { text-decoration: underline; }
+        }
+      }
+
+      .terms {
+        margin-top: 10px;
+        font-size: 12px;
+        color: $c-white-60;
+
+        a { text-decoration: underline; }
+      }
+    }
+
+    /* Footer stats */
+    .card-stats {
+      display: flex;
+      justify-content: space-between;   /* daha ferah dağılım */
+      text-align: center;
+      color: $c-white-70;
+      border-top: 1px solid $c-white-10;
+      padding: 18px clamp(24px, 4vw, 40px);
+
+      .stat {
+        .num   { font-size: 24px; font-weight: 800; color: #fff; }
+        .label { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }
+      }
+    }
+
+    .card-bottom {
+      padding: 0 clamp(24px, 4vw, 40px) 22px;
+      text-align: center;
+      color: $c-white-70;
+      font-size: 14px;
+    }
+  }
+
+  /* small screens */
+  @media (max-width: 640px) {
+    .register-card .card-stats { gap: 16px; }
+    .register-card .card-body  { padding: 20px; }
+  }
+}
+
+/* Footer’ın üstte kalması için (gerekirse) */
+.ggdb-footer { position: relative; z-index: 3; }
+
+.auth-alt {
+  margin-top: 12px;
+  text-align: center;
+  font-size: 1rem;
+  color: rgba(255,255,255,.7);
+  .auth-alt-link {
+    font-weight: 600;
+    text-decoration: none;
+    &:hover { text-decoration: underline; }
+    color: $c-yellow-600;
+  }
+}
+
+
+.form-field {
+  position: relative;
+  margin-bottom: 12px;
+
+  .input {
+    width: 100%;
+    height: 60px;
+    padding: 12px 40px 12px 14px; // sağa ikon için boşluk
+    border-radius: 10px;
+    border: 1px solid rgba(255,255,255,.15);
+    background: rgba(0,0,0,.30);       // mevcut temana uydur
+    color: #fff;
+    outline: none;
+    transition: border-color .2s ease, box-shadow .2s ease;
+  }
+
+  &.ok .input  { border-color: #22c55e; box-shadow: 0 0 0 2px rgba(34,197,94,.15); }
+  &.err .input { border-color: #ef4444; box-shadow: 0 0 0 2px rgba(239,68,68,.15); }
+
+  .status-icon {
+    position: absolute;
+    right: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 18px;
+    pointer-events: none;
+    &.ok  { color: #22c55e; }
+    &.err { color: #ef4444; }
+  }
+}
+
+/* Floating label davranışı */
+
+.floating {
+
+  .input { padding-top: 20px; }  
+
+ 
+  label {
+    position: absolute;          
+    left: 14px;
+    top: 50%;
+    transform: translateY(-50%);
+    line-height: 1.1;
+    pointer-events: none;
+    z-index: 1;                 
+  }
+
+ 
+  .input:focus ~ label,
+  .input:not(:placeholder-shown) ~ label {
+    top: 6px;                    
+    transform: none;
+    font-size: 1rem;
+    color: #a3e635;
+    background: $c-black-40;     
+    padding: 0 4px;
+    border-radius: 6px;
+  }
+
+  
+  .input::placeholder { color: transparent; }
+  .input:-webkit-autofill ~ label {
+    top: 6px; transform: none; font-size: .75rem;
+  }
+}
+
+
+/* Alt bilgilendirme mesajları */
+.check { margin-top: 6px; font-size: .92rem; }
+.check.ok   { color: #16a34a; }
+.check.err  { color: #ef4444; }
+.check.info { color: #a3a3a3; }
+
+.floating .input::placeholder { color: transparent; }
+
+
+
+.floating {
+ 
+  .input { padding-top: 22px; }
+
+  label {
+    position: absolute;
+    left: 14px;
+    top: 6px;                        
+    transform-origin: left top;
+   
+    transform: translateY(14px) scale(1);
+    
+    transition:
+      transform .26s cubic-bezier(.4, 0, .2, 1),
+      color     .26s ease,
+      background .26s ease,
+      padding   .26s ease;
+    line-height: 1.1;
+    pointer-events: none;
+    padding: 0 4px;
+    background: transparent;          
+    will-change: transform;
+  }
+
+  
+  .input:focus ~ label,
+  .input:not(:placeholder-shown) ~ label {
+    transform: translateY(0) scale(.78);
+    color: #a3e635;                  
+    background: $c-black-40;          
+    border-radius: 6px;
+  }
+
+  
+  .input::placeholder { color: transparent; }
+  .input:-webkit-autofill ~ label {
+    transform: translateY(0) scale(.78);
+  }
+
+  
+  .status-icon {
+    transition: opacity .2s ease, transform .2s ease;
+  }
+}
+
+
+@media (prefers-reduced-motion: reduce) {
+  .floating label { transition: none; }
+}
+
+
+/* Select'ler de floating olsun */
+.floating {
+  .select { 
+    padding-top: 22px;              /* label çakışmasın */
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+    background-image: none;         /* istersen kendi ok ikonunu eklersin */
+  }
+
+  /* Toggle butonu olan alanlar (password) için sağ padding */
+  .toggle {
+    position: absolute;
+    right: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: $c-white-70;
+    font-size: 13px;
+    background: transparent;
+    border: 0;
+    cursor: pointer;
+    z-index: 2;
+  }
+  /* Toggle varken metin sağa taşmasın */
+  .input { padding-right: 42px; }
+}
+
+/* Değer dolu (select gibi) olduğunda label'ı yukarı taşı */
+.floating.has-value label {
+  transform: translateY(0) scale(.78);
+  color: #a3e635;
+  background: $c-black-40;
+  border-radius: 6px;
+  padding: 0 4px;
+}
+
+/* (Zaten eklediyseniz tekrar gerek yok) Smooth animasyon */
+.floating label {
+  position: absolute;
+  left: 14px;
+  top: 6px;
+  transform-origin: left top;
+  transform: translateY(14px) scale(1);
+  transition:
+    transform .26s cubic-bezier(.4, 0, .2, 1),
+    color .26s ease,
+    background .26s ease,
+    padding .26s ease;
+  pointer-events: none;
+  line-height: 1.1;
+  padding: 0 4px;
+}
+
+.floating .input { padding-top: 22px; }
+.floating .input::placeholder { color: transparent; }
+
+/* focus/değer varken */
+.floating .input:focus ~ label,
+.floating .input:not(:placeholder-shown) ~ label {
+  transform: translateY(0) scale(.78);
+  color: #a3e635;
+  background: $c-black-40;
+  border-radius: 6px;
+  padding: 0 4px;
+}
+
+/* Autofill desteği */
+.floating .input:-webkit-autofill ~ label {
+  transform: translateY(0) scale(.78);
+}
+
+/* Date grid içindeki alanların dikey hizası */
+.date-row .form-field { margin-bottom: 0; }
+
+.form-label { display:block; margin: 10px 0 6px; font-size:14px; }
+
+
+/* === Tüm alanlar arasında eşit dikey boşluk === */
+$field-gap: 16px; // istersen 14px yap
+
+/* Formun DOĞRUDAN çocukları için boşluk veriyoruz:
+   - .form-field (floating kullanılanlar)
+   - .input / .select (normal kullanılanlar)
+   - .date-row (tarih grid’i)
+*/
+.register-card form {
+  > .form-field,
+  > .input,
+  > .select,
+  > .date-row {
+    margin-bottom: $field-gap;
+  }
+
+  /* Buton ve alternatif bağlantılar da aynı aralıkla ayrılsın */
+  .btn-primary { margin-top: $field-gap; }
+  .auth-alt    { margin-top: $field-gap; }
+}
+
+/* .form-field'in alt boşluğunu standartla (eski 12px'i override eder) */
+.form-field { margin-bottom: $field-gap; }
+
+/* Tarih grid'inin içindeki input'lara ek boşluk verme; grid kendi gap'ini kullanıyor */
+.date-row .input,
+.date-row .select,
+.date-row .form-field {
+  margin-bottom: 0;
+}
+
+
+

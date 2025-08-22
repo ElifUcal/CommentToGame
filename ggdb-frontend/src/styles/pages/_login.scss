@@ -1,0 +1,258 @@
+$yellow: #facc15;
+$bg-dark: #000;
+$text: #fff;
+$muted: #9ca3af;
+
+.login-page {
+  position: relative;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: sans-serif;
+}
+
+.login-bg {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+}
+
+.login-overlay {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to top, rgba(0,0,0,0.9), rgba(0,0,0,0.5), rgba(0,0,0,0.3));
+}
+
+.login-card {
+  position: relative;
+  z-index: 10;
+  background: rgba(0,0,0,0.85);
+  padding: 40px;
+  border-radius: 12px;
+  width: 360px;
+  max-width: 90%;
+  color: $text;
+  border: 1px solid rgba(255,255,255,0.1);
+}
+
+.login-title {
+  font-size: 24px;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+.login-sub {
+  color: $muted;
+  font-size: 14px;
+  margin-bottom: 20px;
+}
+
+.login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.login-input {
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.2);
+  border-radius: 6px;
+  padding: 12px;
+  color: $text;
+  font-size: 14px;
+    padding-right: 44px;
+  &:focus {
+    outline: 2px solid $yellow;
+  }
+}
+
+.login-password {
+  position: relative;
+  width: 100%;
+
+  .login-input {
+    width: 100%;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.2);
+    border-radius: 6px;
+    padding: 12px;
+    padding-right: 42px; // göz için sağ boşluk bırak
+    color: #fff;
+    font-size: 14px;
+  }
+
+  .login-eyeBtn {
+    position: absolute;
+    top: 50%;
+    right: 12px;
+    transform: translateY(-50%);
+    background: transparent;
+    border: none;
+    padding: 0;
+    margin: 0;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #9ca3af;
+
+    &:hover { color: #facc15; }
+  }
+}
+
+
+.login-btn {
+  background: $yellow;
+  color: #000;
+  font-weight: 600;
+  padding: 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  border: none;
+  margin-top: 4px;
+
+  &:hover { background: darken($yellow, 8%); }
+}
+
+.login-social {
+  margin-top: 20px;
+  display: flex;
+  justify-content: center;
+  gap: 14px;
+
+  
+}
+/* Senin social-button stilin */
+.social-button {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: inline-flex;     /* inline-flex daha uygun */
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #d1d5db;
+  transition: all 0.3s ease;
+  cursor: pointer;
+  position: relative;
+}
+
+.social-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;          /* ikonlar arası boşluk */
+  flex-wrap: wrap;    /* dar ekranda alta geçsin istiyorsan */
+}
+
+
+        /* Eğer span kullanacaksan: span'ı da inline-flex yap */
+.social-row > span {
+  display: inline-flex;
+}
+        .social-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+        
+        /* Google */
+        .google {
+            background-color: white;
+        }
+        .google:hover {
+            background-color: #f3f4f6;
+        }
+        
+        /* Steam */
+        .steam {
+            background-color: #171a21;
+            border-color: #374151;
+        }
+        .steam:hover {
+            background-color: rgba(23, 26, 33, 0.9);
+        }
+        
+        /* Discord */
+        .discord {
+            background-color: #7289da;
+            border-color: #374151;
+        }
+        .discord:hover {
+            background-color: rgba(114, 137, 218, 0.9);
+        }
+        
+        /* Epic Games */
+        .epic {
+            background-color: #313131;
+            border-color: #374151;
+        }
+        .epic:hover {
+            background-color: rgba(49, 49, 49, 0.9);
+        }
+        
+        /* EA Games */
+        .ea {
+            background-color: #ff4747;
+            border-color: #374151;
+        }
+        .ea:hover {
+            background-color: rgba(255, 71, 71, 0.9);
+        }
+        
+        /* Microsoft */
+        .microsoft {
+            background-color: #107C10;
+            border-color: #374151;
+        }
+        .microsoft:hover {
+            background-color: rgba(16, 124, 16, 0.9);
+        }
+        
+        .social-icon {
+            color: white;
+            font-size: 20px;
+        }
+        
+        .google .social-icon {
+            color: #000; /* Google için siyah ikon */
+        }
+
+.login-divider {
+  margin: 20px 0;
+  text-align: center;
+  color: $muted;
+  font-size: 13px;
+  position: relative;
+
+  &::before,
+  &::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    width: 40%;
+    height: 1px;
+    background: rgba(255,255,255,0.2);
+  }
+  &::before { left: 0; }
+  &::after { right: 0; }
+}
+
+.login-extra {
+  text-align: center;
+  font-size: 13px;
+  color: $muted;
+
+  a {
+    color: $yellow;
+    font-weight: 600;
+    margin-left: 4px;
+    text-decoration: none;
+
+    &:hover { text-decoration: underline; }
+  }
+
+  .forgot {
+    display: block;
+    margin-top: 10px;
+  }
+}

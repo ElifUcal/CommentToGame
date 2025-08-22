@@ -1,0 +1,129 @@
+/* ===== GGDB Header ===== */
+$bg: #000;              // tam siyah arka plan
+$logo-yellow: #f5c21a;  // GGDB sarısı
+$text: #ffffff;         // ana metin
+$muted: #cbd5e1;        // "MENU" ve ikonsal metin
+$cta: #e02424;          // kırmızı Sign Up
+$cta-hover: #c81e1e;    // hover
+$height: 56px;          // bar yüksekliği (görsele yakın)
+
+.ggdb-header {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  background: $bg;
+  color: $text;
+  height: $height;
+  box-shadow: 0 0 0 1px rgba(255,255,255,0.02) inset;
+
+  &__inner {
+    max-width: 1240px;
+    margin: 0 auto;
+    padding: 0 18px;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+  }
+
+  /* Logo */
+  &__logo {
+    font-weight: 800;
+    font-size: 28px;
+    line-height: 1;
+    letter-spacing: 0.5px;
+    color: $logo-yellow;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    user-select: none;
+
+    &:hover { opacity: 0.95; }
+    &:active { transform: translateY(0.5px); }
+  }
+
+  /* Menu */
+  &__menu {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    border: 0;
+    background: transparent;
+    cursor: pointer;
+    padding: 8px 10px;
+    margin-left: 8px;
+
+    &:hover .ggdb-header__menuText { color: lighten($muted, 10%); }
+  }
+
+  &__menuIcon {
+    display: inline-flex;
+
+    svg rect { fill: $text; }
+  }
+
+  &__menuText {
+    color: $muted;
+    font-weight: 700;
+    letter-spacing: 0.6px;
+    font-size: 14px;
+  }
+
+  &__spacer {
+    flex: 1 1 auto;
+  }
+
+  /* Right area */
+  &__right {
+    display: inline-flex;
+    align-items: center;
+    gap: 16px;
+  }
+
+  &__search {
+    border: 0;
+    background: transparent;
+    color: $text;
+    padding: 8px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+
+    &:hover { opacity: 0.85; }
+  }
+
+  &__link {
+    color: $text;
+    text-decoration: none;
+    font-size: 14px;
+
+    &:hover { text-decoration: underline; }
+  }
+
+  &__cta {
+    background: $cta;
+    color: #fff;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 14px;
+    padding: 8px 14px;
+    border-radius: 7px;
+    display: inline-flex;
+    align-items: center;
+    line-height: 1;
+
+    &:hover { background: $cta-hover; }
+    &:active { transform: translateY(0.5px); }
+  }
+}
+
+/* Basit responsive: Menü & logo solda sabit, sağ taraf sıkışınca daralır */
+@media (max-width: 640px) {
+  .ggdb-header {
+    &__inner { padding: 0 12px; }
+    &__logo { font-size: 24px; }
+    &__menuText { font-size: 13px; }
+    &__right { gap: 12px; }
+    &__cta { padding: 8px 12px; }
+  }
+}

@@ -1,0 +1,26 @@
+// Import Bootstrap
+@import "~bootstrap/scss/bootstrap";
+
+// Custom variables
+$primary-color: #007bff;
+$secondary-color: #6c757d;
+$success-color: #28a745;
+$info-color: #17a2b8;
+$warning-color: #ffc107;
+$danger-color: #dc3545;
+$light-color: #f8f9fa;
+$dark-color: #343a40;
+
+// Global styles
+body {
+  font-family: 'Roboto', sans-serif;
+  margin: 0;
+  padding: 0;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+// Import component styles
+@import "./components/header";
+@import "./components/footer";
+@import "./pages/home";
