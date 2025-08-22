@@ -27,4 +27,10 @@ public class User
     [BsonRepresentation(BsonType.String)]
     [BsonElement("userType")]
     public UserType UserType { get; set; } = UserType.User; // varsayılan: User
+
+    [BsonElement("Birthdate")]
+    public required DateTime Birthdate { get; set; }
+
+    [BsonElement("country")]
+    public required string Country { get; set; }
 }

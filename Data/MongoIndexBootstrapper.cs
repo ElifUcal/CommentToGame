@@ -19,12 +19,39 @@ public static class MongoIndexBootstrapper
         var platforms    = db.GetCollection<Platform>("Platforms");
         var companies    = db.GetCollection<Company>("Companies");
         var timeToBeat   = db.GetCollection<Time_To_Beat>("TimeToBeat");
+        var users      = db.GetCollection<User>("User");
 
         // Case-insensitive unique için collation (EN, strength: Secondary)
         var ci = new Collation("en", strength: CollationStrength.Secondary);
 
         var tasks = new List<Task>
         {
+
+
+            users.Indexes.CreateOneAsync(
+            new CreateIndexModel<User>(
+                Builders<User>.IndexKeys.Ascending(u => u.Email),
+                new CreateIndexOptions { Name = "ux_users_email", Unique = true, Collation = ci }
+            )
+        ),
+
+        // Users(UserName) UNIQUE — kullanıcı adında da tekrar olmasın
+        users.Indexes.CreateOneAsync(
+            new CreateIndexModel<User>(
+                Builders<User>.IndexKeys.Ascending(u => u.UserName),
+                new CreateIndexOptions { Name = "ux_users_username", Unique = true, Collation = ci }
+            )
+        ),
+
+        // (Öneri) Users(RefreshToken) — refresh akışında hızlı lookup
+        users.Indexes.CreateOneAsync(
+            new CreateIndexModel<User>(
+                Builders<User>.IndexKeys.Ascending(u => u.RefreshToken),
+                new CreateIndexOptions { Name = "ix_users_refreshtoken" }
+            )
+        ),
+
+
             // Games(Game_Name) UNIQUE (case-insensitive)
             games.Indexes.CreateOneAsync(
                 new CreateIndexModel<Game>(

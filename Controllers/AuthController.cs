@@ -31,29 +31,36 @@ public class AuthController : ControllerBase
     }
 
     [HttpPost("register")]
-    public async Task<IActionResult> Register([FromBody] UserDto request)
+public async Task<IActionResult> Register([FromBody] UserDto request)
+{
+    if (request is null || string.IsNullOrWhiteSpace(request.UserName)
+                        || string.IsNullOrWhiteSpace(request.Email)
+                        || string.IsNullOrWhiteSpace(request.Password))
+        return BadRequest("Kullanıcı adı, email ve şifre zorunludur.");
+
+    var userName = request.UserName.Trim();
+    var email    = request.Email.Trim().ToLowerInvariant();  // <— ÖNEMLİ
+
+    // Aynı kullanıcı adı veya email var mı?
+    var exists = await _users
+        .Find(u => u.UserName == userName || u.Email == email)
+        .AnyAsync();
+
+    if (exists)
+        return BadRequest("Bu kullanıcı adı veya email zaten var.");
+
+    var user = new User
     {
-        if (request is null || string.IsNullOrWhiteSpace(request.UserName)
-                            || string.IsNullOrWhiteSpace(request.Email)
-                            || string.IsNullOrWhiteSpace(request.Password))
-            return BadRequest("Kullanıcı adı, email ve şifre zorunludur.");
+        UserName     = userName,
+        Email        = email,                                 // <— normalize kaydet
+        PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password),
+        Birthdate    = request.Birthdate,
+        Country      = request.Country.Trim()
+    };
 
-        // Aynı kullanıcı adı veya email var mı?
-        var exists = await _users.Find(u => u.UserName == request.UserName || u.Email == request.Email)
-                                 .AnyAsync();
-        if (exists)
-            return BadRequest("Bu kullanıcı adı veya email zaten var.");
-
-        var user = new User
-        {
-            UserName = request.UserName.Trim(),
-            Email = request.Email.Trim(),
-            PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password)
-        };
-
-        await _users.InsertOneAsync(user);
-        return Ok("Kayıt başarılı.");
-    }
+    await _users.InsertOneAsync(user);
+    return Ok("Kayıt başarılı.");
+}
 
     [HttpPost("login")]
     public async Task<IActionResult> Login([FromBody] LoginDto request)
@@ -81,6 +88,21 @@ public class AuthController : ControllerBase
 
         return Ok(new { token, refreshToken = refresh });
     }
+
+    [HttpGet("check-email")]
+public async Task<IActionResult> CheckEmail([FromQuery] string email)
+{
+    if (string.IsNullOrWhiteSpace(email))
+        return BadRequest(new { available = false, message = "Email gerekli." });
+
+    var norm = email.Trim().ToLowerInvariant();
+
+    // Email'i normalize ederek tuttugumuz varsayımıyla doğrudan eşitlik sorgusu yapıyoruz
+    var exists = await _users.Find(u => u.Email == norm).AnyAsync();
+
+    return Ok(new { available = !exists });
+}
+
 
     [HttpPost("refresh-token")]
     public async Task<IActionResult> RefreshToken([FromBody] RefreshTokenRequest request)
