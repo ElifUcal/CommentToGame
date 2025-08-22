@@ -18,7 +18,6 @@ namespace CommentToGame.Data
             Database   = client.GetDatabase(databaseName);
         }
 
-        // İstersen yardımcı bir koleksiyon getter:
         public IMongoCollection<T> GetCollection<T>(string name) => Database.GetCollection<T>(name);
     }
 }

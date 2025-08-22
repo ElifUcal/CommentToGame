@@ -8,7 +8,7 @@ namespace CommentToGame.Controllers;
 public class AdminController : ControllerBase
 {
     [HttpGet("dashboard")]
-    [Authorize(Roles = "Admin")] // 🔒 sadece Admin
+    [Authorize(Roles = "Admin")] // sadece Admin
     public IActionResult Dashboard()
     {
         return Ok("Admin panel verisi 🔐");

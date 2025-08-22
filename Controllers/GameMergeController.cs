@@ -61,14 +61,14 @@ namespace CommentToGame.Controllers
                 .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
                 .ToList() ?? new List<string>();
 
-            // 🔹 CAST/CREW — yeni
+            // CAST/CREW — yeni
             var team = await _rawg.GetGameDevelopmentTeamAsync(rawgId);
             var (cast, crew) = SplitCastCrew(team);
 
             // Merge: cast/crew ve storeLinks'i geçir
             var merged = GameMerge.Merge(igdb, rawg, ttb, storeLinks, cast, crew);
 
-            // DLC’leri merge sonucu üzerine yaz
+            // DLCleri merge sonucu üzerine yaz
             if (dlcNames.Count > 0)
                 merged.Dlcs = dlcNames;
 
@@ -150,7 +150,7 @@ namespace CommentToGame.Controllers
                 {
                     var host = uri.Host.ToLowerInvariant();
 
-                    // Store bilgisi yoksa host'tan tahmin et
+                    // Store bilgisi yoksa hosttan tahmin et
                     if (string.IsNullOrWhiteSpace(slug) || string.IsNullOrWhiteSpace(storeName))
                     {
                         var guess = GuessStoreFromHost(host);
@@ -158,11 +158,11 @@ namespace CommentToGame.Controllers
                         storeName = storeName ?? guess.name;
                     }
 
-                    // Domain boşsa URL host'unu kullan
+                    // Domain boşsa URL hostunu kullan
                     if (string.IsNullOrWhiteSpace(domain))
                         domain = host;
 
-                    // Slug/host'a göre externalId çıkar
+                    // Slug/hosta göre externalId çıkar
                     externalId = ExtractExternalIdFromUrl(host, slug, url, uri.AbsolutePath);
                 }
 
@@ -200,7 +200,7 @@ namespace CommentToGame.Controllers
 
         private static string? ExtractExternalIdFromUrl(string host, string? slug, string url, string path)
         {
-            // Slug boşsa host'tan türet
+            // Slug boşsa hosttan türet
             var key = slug;
             if (string.IsNullOrWhiteSpace(key))
             {

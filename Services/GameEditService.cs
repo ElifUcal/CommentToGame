@@ -50,7 +50,7 @@ public sealed class GameEditService
         if (gUpdates.Count > 0)
             await _games.UpdateOneAsync(gFilter, Builders<Game>.Update.Combine(gUpdates), cancellationToken: ct);
 
-        // Güncel id ve name’i al (rename olduysa)
+        // Güncel id ve name al (rename olduysa)
         var current = await _games.Find(gFilter).FirstOrDefaultAsync(ct);
         var dFilter = Builders<Game_Details>.Filter.Eq(x => x.GameId, current.Id);
 
@@ -70,7 +70,7 @@ public sealed class GameEditService
         if (!string.IsNullOrWhiteSpace(body.Publisher)) dUpdates.Add(D.Set(x => x.Publisher, body.Publisher));
         if (!string.IsNullOrWhiteSpace(body.About))     dUpdates.Add(D.Set(x => x.Story, body.About));
 
-        // listeler (null => dokunma, empty => temizle)
+        // listeler (null => dokunma empty => temizle)
         if (body.AgeRatings != null)      dUpdates.Add(D.Set(x => x.Age_Ratings, body.AgeRatings.Distinct().ToList()));
         if (body.Dlcs != null)            dUpdates.Add(D.Set(x => x.DLCs, body.Dlcs.Distinct().ToList()));
         if (body.Tags != null)            dUpdates.Add(D.Set(x => x.Tags, body.Tags.Distinct().ToList()));
@@ -101,7 +101,7 @@ public sealed class GameEditService
         if (body.TimeToBeatNormally.HasValue)  dUpdates.Add(D.Set(x => x.TimeToBeat_Normally, body.TimeToBeatNormally));
         if (body.TimeToBeatCompletely.HasValue)dUpdates.Add(D.Set(x => x.TimeToBeat_Completely, body.TimeToBeatCompletely));
 
-        // Genres/Platforms isimden ID'ye upsert
+        // Genres/Platforms isimden IDye upsert
         if (body.Genres != null)
         {
             var ids = new List<string>();

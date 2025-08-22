@@ -48,7 +48,7 @@ public class RawgImportController : ControllerBase
         return Ok(list);
     }
 
-    // 👇 YENİ: RAWG id ile tek oyun import
+    // YENİ: RAWG id ile tek oyun import
     // Örnek: POST /api/import/rawg/3498
     // RawgImportController.cs
 [HttpPost("id/{id:int}")]

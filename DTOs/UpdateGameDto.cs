@@ -25,21 +25,21 @@ public sealed class UpdateGameDto
     public string? MinRequirement { get; set; }
     public string? RecRequirement { get; set; }
 
-    // --- NEW: Diller & içerik uyarıları ---
+    // --- NEW Diller & içerik uyarıları ---
     public List<string>? AudioLanguages { get; set; }
     public List<string>? Subtitles { get; set; }
     public List<string>? InterfaceLanguages { get; set; }
     public List<string>? ContentWarnings { get; set; }
 
-    // --- NEW: Mağaza linkleri ---
+    // --- NEW Mağaza linkleri ---
     public List<StoreLinkDto>? StoreLinks { get; set; }
 
-    // --- NEW: Time To Beat (saat cinsinden) ---
+    // --- NEW Time To Beat (saat cinsinden) ---
     public int? TimeToBeatHastily { get; set; }
     public int? TimeToBeatNormally { get; set; }
     public int? TimeToBeatCompletely { get; set; }
 
-    // --- NEW: Engine(ler) & Ödüller ---
+    // --- NEW Engine(ler) & Ödüller ---
     public List<string>? Engines { get; set; }
     public List<string>? Awards { get; set; }
 

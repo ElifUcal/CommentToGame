@@ -23,7 +23,6 @@ public class AuthController : ControllerBase
         var db = service?.Database 
                  ?? throw new InvalidOperationException("MongoDbService.database is null.");
 
-        // İstersen appsettings: MongoDb:UsersCollection ile de okuyabilirsin
         var usersCollectionName = config["MongoDb:UsersCollection"] ?? "User";
 
         _users  = db.GetCollection<User>(usersCollectionName);
@@ -97,7 +96,7 @@ public async Task<IActionResult> CheckEmail([FromQuery] string email)
 
     var norm = email.Trim().ToLowerInvariant();
 
-    // Email'i normalize ederek tuttugumuz varsayımıyla doğrudan eşitlik sorgusu yapıyoruz
+    // Emaili normalize ederek tuttugumuzu düşün doğrudan eşitlik sorgusu yapıyoruz
     var exists = await _users.Find(u => u.Email == norm).AnyAsync();
 
     return Ok(new { available = !exists });

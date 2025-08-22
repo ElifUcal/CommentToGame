@@ -24,7 +24,7 @@ public class RawgGameSummary
 
     public List<RawgNameWrapper> Genres { get; set; } = new();
 
-    // requirements için wrapper'ı genişletiyoruz
+    // requirements için wrapperı genişletiyoruz
     public List<RawgPlatformWrapper> Platforms { get; set; } = new();
 
     public int? Metacritic { get; set; }
@@ -37,7 +37,7 @@ public class RawgGameSummary
     public int? RatingsCount { get; set; }
 
     [JsonPropertyName("added")]
-    public int? Added { get; set; }   // "popülerlik" için güzel bir proxy
+    public int? Added { get; set; }   // "popülerlik" için bir proxy
 
     public string? Slug { get; set; }
 }
@@ -120,7 +120,7 @@ public class RawgPlatformWrapper
 {
     public RawgNameWrapper Platform { get; set; } = new();
 
-    // Sadece PC için döner (minimum/recommended), konsollarda genelde null
+    // Sadece PC için döner (minimum/recommended) konsollarda genelde null
     [JsonPropertyName("requirements")]
     public RawgRequirements? Requirements { get; set; }
 }

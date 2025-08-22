@@ -50,7 +50,7 @@ public async Task<IActionResult> Search(
 }
 
 
-        // GET /api/igdb/detail/12345 (DB'ye yazmaz)
+        // GET /api/igdb/detail/12345 (DBye yazmaz)
         [HttpGet("detail/{id:long}")]
         public async Task<IActionResult> Detail([FromRoute] long id, CancellationToken ct = default)
         {

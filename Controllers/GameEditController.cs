@@ -29,7 +29,7 @@ namespace CommentToGame.Controllers
             return Ok(dto);
         }
 
-        // PUT: isme göre merge update (göndermediklerine dokunmaz)
+        // PUT isme göre merge update (göndermediklerine dokunmadan)
         [HttpPut("by-name/{name}")]
         public async Task<IActionResult> PutByName([FromRoute] string name, [FromBody] UpdateGameDto body, CancellationToken ct)
         {

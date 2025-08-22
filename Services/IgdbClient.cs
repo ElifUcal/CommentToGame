@@ -73,7 +73,7 @@ public sealed class IgdbClient : IIgdbClient
     var offset = (page - 1) * pageSize;
     var safe = query.Replace("\"", "\\\"");
 
-    // games'ten alt alanları doğrudan getiriyoruz (cover.image_id, platforms.name, category)
+    // gamesten alt alanları doğrudan getiriyoruz (cover.image_id, platforms.name, category)
     var rows = await PostAsync<GameRowSearch>(
         "games",
         $"fields id,name,first_release_date,category,cover.image_id,platforms.name; " +
@@ -177,7 +177,7 @@ private sealed class GameRowSearch
                         var uid = Regex.Replace(e.uid!, @"^xbox360", "", RegexOptions.IgnoreCase);
 
                         if (string.Equals(fromUrl.Store, "Xbox Store", StringComparison.OrdinalIgnoreCase))
-                            fromUrl.ExternalId = uid;                    // Xbox’ta normalize UID
+                            fromUrl.ExternalId = uid;                    // Xboxta normalize UID
                         else if (string.IsNullOrWhiteSpace(fromUrl.ExternalId))
                             fromUrl.ExternalId = uid;                     // diğerlerinde boşsa doldur
                     }

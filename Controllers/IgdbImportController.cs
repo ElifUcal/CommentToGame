@@ -48,17 +48,17 @@ public class IgdbImportController : ControllerBase
         return Ok(list);
     }
 
-    // 👇 YENİ: IGDB id ile tek oyun import
+    // YENİ IGDB id ile tek oyun import
     // POST /api/import/igdb/239064
     [HttpPost("{id:long}")]
     public async Task<IActionResult> ImportOne([FromRoute] long id, CancellationToken ct = default)
     {
-        // 1) IGDB’den detayını çek
+        // 1) IGDBden detayını çek
         var detail = await _igdb.GetGameDetailAsync(id, ct);
         if (detail is null)
             return NotFound(new { message = "IGDB game not found", id });
 
-        // 2) DB’ye upsert et
+        // 2) DBye upsert et
         await _svc.UpsertOneAsync(detail, ct);
 
         // 3) Özet dön

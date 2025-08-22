@@ -10,7 +10,7 @@ namespace CommentToGame.DTOs
         public sealed class IgdbPagedGames
         {
             public List<IgdbGameCard> Results { get; set; } = new();
-            public string? Next { get; set; } // IGDB'yi v4 POST ile çağırırken siz dolduracaksınız (client tarafında)
+            public string? Next { get; set; } // IGDByi v4 POST ile çağırırken doldurulucak (client tarafında)
         }
 
         public sealed class IgdbPagedSimpleNames
@@ -44,7 +44,7 @@ namespace CommentToGame.DTOs
             public DateTime? ReleaseDate { get; set; }
             public int? Metacritic { get; set; } // IGDB: aggregated_rating/ rating yoksa null
             public double? Rating { get; set; }  // /100 gelir, biz /100 bırakıyoruz
-            public string? BackgroundImage { get; set; } // cover/screenshot'tan üretilmiş URL
+            public string? BackgroundImage { get; set; } // cover/screenshottan üretilmiş URL
             public int? Added { get; set; } // yoksa null
 
             public List<string> Genres { get; set; } = new();

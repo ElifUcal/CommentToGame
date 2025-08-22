@@ -36,7 +36,7 @@ public sealed class MergedGameDto
 
     public List<StoreLink> StoreLinks { get; set; } = new();
 
-    // TTB (saat cinsinden; IGDB saniyeyi verdiği için dönüştürürüz)
+    // TTB (saat cinsinden IGDB saniyeyi verdiği için dönüştürürüz)
     public int? TimeToBeatHastily { get; set; }
     public int? TimeToBeatNormally { get; set; }
     public int? TimeToBeatCompletely { get; set; }
@@ -44,7 +44,7 @@ public sealed class MergedGameDto
     public List<string> Engines { get; set; } = new();
     public List<string> Awards { get; set; } = new();
 
-    // Cast/Crew (RAWG’a göre)
+    // Cast/Crew (RAWGa göre)
     public List<string> Cast { get; set; } = new();
     public List<string> Crew { get; set; } = new();
 }
