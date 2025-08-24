@@ -33,4 +33,7 @@ public class User
 
     [BsonElement("country")]
     public required string Country { get; set; }
+
+    [BsonElement("ProfileImageUrl")]
+    public string? ProfileImageUrl { get; set; }
 }

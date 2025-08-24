@@ -8,5 +8,7 @@ namespace CommentToGame.Dtos
 
         public required DateTime Birthdate { get; set; }
         public required string Country { get; set; }
+
+        public string? ProfileImageUrl { get; set; }
     }
 }
