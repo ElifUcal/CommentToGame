@@ -34,4 +34,7 @@ public class Game
 
     [BsonIgnore]
     public Time_To_Beat? Time_To_Beat { get; set; }
+
+    [BsonElement("createdat")]
+    public required DateTime Createdat { get; set; } = DateTime.Now;
 }

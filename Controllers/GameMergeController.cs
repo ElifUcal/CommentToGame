@@ -10,6 +10,8 @@ using CommentToGame.Services;
 using CommentToGame.DTOs;
 using CommentToGame.Models;
 using static CommentToGame.DTOs.IGdbDto;
+using MongoDB.Driver;
+using CommentToGame.Data;
 
 namespace CommentToGame.Controllers
 {
@@ -20,10 +22,16 @@ namespace CommentToGame.Controllers
         private readonly IIgdbClient _igdb;
         private readonly IRawgClient _rawg;
 
-        public GameMergeController(IIgdbClient igdb, IRawgClient rawg)
+        private readonly IMongoCollection<Game> _games;
+        private readonly IMongoCollection<Game_Details> _gameDetails;
+
+        public GameMergeController(IIgdbClient igdb, IRawgClient rawg, MongoDbService service)
         {
             _igdb = igdb;
             _rawg = rawg;
+
+            _games = service.GetCollection<Game>("Games");
+            _gameDetails = service.GetCollection<Game_Details>("GameDetails");
         }
 
         /// <summary>
@@ -168,11 +176,11 @@ namespace CommentToGame.Controllers
 
                 result.Add(new StoreLink
                 {
-                    StoreId    = s.Store?.Id ?? s.StoreId,
-                    Store      = storeName ?? "Store",
-                    Slug       = slug,
-                    Domain     = domain,
-                    Url        = url,
+                    StoreId = s.Store?.Id ?? s.StoreId,
+                    Store = storeName ?? "Store",
+                    Slug = slug,
+                    Domain = domain,
+                    Url = url,
                     ExternalId = externalId
                 });
             }
@@ -188,13 +196,13 @@ namespace CommentToGame.Controllers
 
         private static (string slug, string name) GuessStoreFromHost(string host)
         {
-            if (host.Contains("steampowered.com"))                 return ("steam", "Steam");
-            if (host.Contains("gog.com"))                          return ("gog", "GOG");
-            if (host.Contains("epicgames.com"))                    return ("epic-games", "Epic Games Store");
-            if (host.Contains("playstation.com"))                  return ("playstation-store", "PlayStation Store");
+            if (host.Contains("steampowered.com")) return ("steam", "Steam");
+            if (host.Contains("gog.com")) return ("gog", "GOG");
+            if (host.Contains("epicgames.com")) return ("epic-games", "Epic Games Store");
+            if (host.Contains("playstation.com")) return ("playstation-store", "PlayStation Store");
             if (host.Contains("xbox.com") || host.Contains("microsoft.com") || host.Contains("marketplace.xbox.com"))
-                                                                   return ("xbox-store", "Xbox Store");
-            if (host.Contains("nintendo.com"))                     return ("nintendo-eshop", "Nintendo eShop");
+                return ("xbox-store", "Xbox Store");
+            if (host.Contains("nintendo.com")) return ("nintendo-eshop", "Nintendo eShop");
             return ("store", "Store");
         }
 
@@ -273,5 +281,21 @@ namespace CommentToGame.Controllers
                     return null;
             }
         }
+
+        
+
+        
+        
+
+
+
+
+
+
     }
+
+
+
+
+
 }

@@ -123,6 +123,7 @@ public class IgdbImportService
                 .Set(x => x.Crew, crew)
                 .Set(x => x.Main_image_URL, detail.BackgroundImage)
                 .Set(x => x.CompanyIds, new List<string>())
+                .Set(x => x.Createdat , DateTime.Now)
                 .SetOnInsert(x => x.Game_Name, detail.Name)
                 .SetOnInsert(x => x.Id, ObjectId.GenerateNewId().ToString());
 

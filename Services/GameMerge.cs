@@ -1,4 +1,3 @@
-// Services/GameMerge.cs
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -13,9 +12,17 @@ namespace CommentToGame.Services
     {
         public sealed class TimeToBeatDto
         {
-            public int? Hastily { get; set; }
-            public int? Normally { get; set; }
-            public int? Completely { get; set; }
+            public int? Hastily { get; set; }     // saat cinsinden
+            public int? Normally { get; set; }    // saat cinsinden
+            public int? Completely { get; set; }  // saat cinsinden
+        }
+
+        // minRequirement / recRequirement için esnek giriş:
+        // { "id": "66c...", "text": "Minimum: ..." } veya { "text": "Minimum: ..." }
+        public sealed class RequirementInput
+        {
+            public string? Id { get; set; }
+            public string? Text { get; set; }
         }
 
         public sealed class MergedGameDto
@@ -35,9 +42,11 @@ namespace CommentToGame.Services
             public List<string> Tags { get; set; } = new();
             public List<string> Genres { get; set; } = new();
             public List<string> Platforms { get; set; } = new();
+            public List<string>? Images { get; set; }
 
-            public string? MinRequirement { get; set; }
-            public string? RecRequirement { get; set; }
+            // ARTIK obje bekliyoruz (id ve/veya text)
+            public RequirementInput? MinRequirement { get; set; }
+            public RequirementInput? RecRequirement { get; set; }
 
             public List<string> AudioLanguages { get; set; } = new();
             public List<string> Subtitles { get; set; } = new();
@@ -52,6 +61,7 @@ namespace CommentToGame.Services
 
             public List<string> Cast { get; set; } = new();
             public List<string> Crew { get; set; } = new();
+            public DateTime Createdat { get; set; } = DateTime.Now;
         }
 
         public static MergedGameDto Merge(
@@ -61,89 +71,68 @@ namespace CommentToGame.Services
             List<StoreLink>? storeLinks = null,
             IEnumerable<string>? rawgCast = null,
             IEnumerable<string>? rawgCrew = null,
-            IEnumerable<string>? igdbDlcs = null)   // IGDB additions’tan gelen DLC isimleri
+            IEnumerable<string>? igdbDlcs = null)
         {
             var dto = new MergedGameDto();
 
-            // name: IGDB = RAWG
-            dto.Name = FirstNonEmpty(igdb?.Name, rawg?.Name);
+            dto.Name         = FirstNonEmpty(igdb?.Name, rawg?.Name);
+            dto.ReleaseDate  = igdb?.ReleaseDate ?? ParseDate(rawg?.Released);
+            dto.Metacritic   = rawg?.Metacritic;
+            dto.GgDbRating   = rawg?.Rating is double r ? (int?)Math.Round(r * 20) : null;
+            dto.MainImage    = FirstNonEmpty(igdb?.BackgroundImage, rawg?.BackgroundImage);
+            dto.Popularity   = rawg?.Added;
 
-            // releaseDate: IGDB > RAWG.Released
-            dto.ReleaseDate = igdb?.ReleaseDate ?? ParseDate(rawg?.Released);
+            dto.Developer    = FirstNonEmpty(igdb?.Developers?.FirstOrDefault(), rawg?.Developers?.FirstOrDefault()?.Name);
+            dto.Publisher    = FirstNonEmpty(igdb?.Publishers?.FirstOrDefault(), rawg?.Publishers?.FirstOrDefault()?.Name);
+            dto.About        = FirstNonEmpty(igdb?.Summary, rawg?.DescriptionRaw);
 
-            // metacritic: RAWG
-            dto.Metacritic = rawg?.Metacritic;
-
-            // ggDbRating: RAWG.rating (0–5) -> 0–100
-            dto.GgDbRating = rawg?.Rating is double r ? (int?)Math.Round(r * 20) : null;
-
-            // mainImage: IGDB > RAWG
-            dto.MainImage = FirstNonEmpty(igdb?.BackgroundImage, rawg?.BackgroundImage);
-
-            // popularity: RAWG.added
-            dto.Popularity = rawg?.Added;
-
-            // developer/publisher: IGDB > RAWG
-            dto.Developer = FirstNonEmpty(
-                igdb?.Developers?.FirstOrDefault(),
-                rawg?.Developers?.FirstOrDefault()?.Name
-            );
-            dto.Publisher = FirstNonEmpty(
-                igdb?.Publishers?.FirstOrDefault(),
-                rawg?.Publishers?.FirstOrDefault()?.Name
-            );
-
-            // about: IGDB.summary > RAWG.description_raw
-            dto.About = FirstNonEmpty(igdb?.Summary, rawg?.DescriptionRaw);
-
-            // ageRatings: IGDB > RAWG (ESRB + list)
-            dto.AgeRatings = (igdb?.AgeRatings ?? Enumerable.Empty<string>())
-                .WhereNotEmpty().Distinct().ToList();
+            dto.AgeRatings = (igdb?.AgeRatings ?? Enumerable.Empty<string>()).WhereNotEmpty().Distinct().ToList();
             if (dto.AgeRatings.Count == 0)
                 dto.AgeRatings = BuildRawgAgeRatings(rawg);
 
-            // dlcs: IGDB additions’tan gelenler
             dto.Dlcs = igdbDlcs?.WhereNotEmpty().Distinct().ToList() ?? new List<string>();
 
-            // tags: IGDB > RAWG
-            dto.Tags = (igdb?.Tags ?? Enumerable.Empty<string>())
-                .WhereNotEmpty().Distinct().ToList();
+            dto.Tags = (igdb?.Tags ?? Enumerable.Empty<string>()).WhereNotEmpty().Distinct().ToList();
             if (dto.Tags.Count == 0 && rawg?.Tags != null)
                 dto.Tags = rawg.Tags.Select(t => t.Name).WhereNotEmpty().Distinct().ToList();
 
-            // genres: IGDB > RAWG
-            dto.Genres = (igdb?.Genres ?? Enumerable.Empty<string>())
-                .WhereNotEmpty().Distinct().ToList();
+            dto.Genres = (igdb?.Genres ?? Enumerable.Empty<string>()).WhereNotEmpty().Distinct().ToList();
             if (dto.Genres.Count == 0 && rawg?.Genres != null)
                 dto.Genres = rawg.Genres.Select(g => g.Name).WhereNotEmpty().Distinct().ToList();
 
-            // platforms: IGDB > RAWG
-            dto.Platforms = (igdb?.Platforms ?? Enumerable.Empty<string>())
-                .WhereNotEmpty().Distinct().ToList();
+            dto.Platforms = (igdb?.Platforms ?? Enumerable.Empty<string>()).WhereNotEmpty().Distinct().ToList();
             if (dto.Platforms.Count == 0 && rawg?.Platforms != null)
                 dto.Platforms = rawg.Platforms.Select(p => p.Platform?.Name).WhereNotEmpty().Distinct().ToList();
 
-            // requirements (PC)
-            if (rawg?.Platforms != null)
+            // PC gereksinimleri → RequirementInput.Text doldur
+            var pc = rawg?.Platforms?.FirstOrDefault(p =>
             {
-                var pc = rawg.Platforms.FirstOrDefault(p =>
-                    (p.Platform?.Name ?? "").Contains("PC", StringComparison.OrdinalIgnoreCase) ||
-                    (p.Platform?.Slug ?? "").Contains("pc", StringComparison.OrdinalIgnoreCase));
+                var name = p.Platform?.Name;
+                var slug = p.Platform?.Slug;
+                var hasPcInName = !string.IsNullOrEmpty(name) && name.IndexOf("PC", StringComparison.OrdinalIgnoreCase) >= 0;
+                var hasPcInSlug = !string.IsNullOrEmpty(slug) && slug.IndexOf("pc", StringComparison.OrdinalIgnoreCase) >= 0;
+                return hasPcInName || hasPcInSlug;
+            });
 
-                dto.MinRequirement = pc?.Requirements?.Minimum;
-                dto.RecRequirement = pc?.Requirements?.Recommended;
+            if (pc?.Requirements != null)
+            {
+                var minText = pc.Requirements.Minimum;
+                var recText = pc.Requirements.Recommended;
+
+                if (!string.IsNullOrWhiteSpace(minText))
+                    dto.MinRequirement = new RequirementInput { Text = minText };
+
+                if (!string.IsNullOrWhiteSpace(recText))
+                    dto.RecRequirement = new RequirementInput { Text = recText };
             }
 
-            // languages & content warnings: IGDB
             dto.AudioLanguages     = (igdb?.AudioLanguages     ?? Enumerable.Empty<string>()).WhereNotEmpty().Distinct().ToList();
             dto.Subtitles          = (igdb?.Subtitles          ?? Enumerable.Empty<string>()).WhereNotEmpty().Distinct().ToList();
             dto.InterfaceLanguages = (igdb?.InterfaceLanguages ?? Enumerable.Empty<string>()).WhereNotEmpty().Distinct().ToList();
             dto.ContentWarnings    = (igdb?.ContentWarnings    ?? Enumerable.Empty<string>()).WhereNotEmpty().Distinct().ToList();
 
-            // storeLinks: RAWG (controller’dan hazır liste geliyor)
             dto.StoreLinks = storeLinks ?? new List<StoreLink>();
 
-            // time to beat: IGDB (saniye -> saat, yakınsama ile)
             if (igdbTtbSeconds != null)
             {
                 dto.TimeToBeat = new TimeToBeatDto
@@ -154,15 +143,13 @@ namespace CommentToGame.Services
                 };
             }
 
-            // engines: IGDB
             dto.Engines = (igdb?.Engines ?? Enumerable.Empty<string>()).WhereNotEmpty().Distinct().ToList();
+            dto.Awards  = (igdb?.Awards  ?? Enumerable.Empty<string>()).WhereNotEmpty().Distinct().ToList();
 
-            // awards: IGDB
-            dto.Awards = (igdb?.Awards ?? Enumerable.Empty<string>()).WhereNotEmpty().Distinct().ToList();
-
-            // cast/crew: RAWG’den parametre ile gelebilir
             if (rawgCast != null) dto.Cast = rawgCast.WhereNotEmpty().Distinct().ToList();
             if (rawgCrew != null) dto.Crew = rawgCrew.WhereNotEmpty().Distinct().ToList();
+
+            dto.Createdat = DateTime.Now;
 
             return dto;
         }

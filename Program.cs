@@ -10,6 +10,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 // ----- SERVICES -----
 builder.Services.AddSingleton<MongoDbService>();
+builder.Services.AddSingleton<PreviewImportService>();
 
 // JWT
 var jwtKey = builder.Configuration.GetValue<string>("Jwt:Key")

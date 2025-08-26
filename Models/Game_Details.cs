@@ -48,10 +48,13 @@ public class Game_Details
 
     [BsonRepresentation(BsonType.ObjectId)]
     public string? MinRequirementId { get; set; }
+    
     [BsonIgnore] public MinRequirement? MinRequirement { get; set; }
 
     [BsonRepresentation(BsonType.ObjectId)]
     public string? RecRequirementId { get; set; }
+
+     
     [BsonIgnore] public RecRequirement? RecRequirement { get; set; }
 
     public int? TimeToBeat_Hastily { get; set; }

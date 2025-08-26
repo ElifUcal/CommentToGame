@@ -47,4 +47,6 @@ public sealed class MergedGameDto
     // Cast/Crew (RAWGa göre)
     public List<string> Cast { get; set; } = new();
     public List<string> Crew { get; set; } = new();
+
+    public DateTime Createdat { get; set; } = DateTime.Now;
 }

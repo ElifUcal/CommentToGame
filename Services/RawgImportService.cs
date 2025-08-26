@@ -84,7 +84,8 @@ public class RawgImportService
                     Metacritic_Rating = detail.Metacritic,
                     GgDb_Rating = detail.Rating.HasValue ? (int)(detail.Rating * 20) : null, // RAWG rating /5 → /100
                     CompanyIds = new List<string>(), // RAWG'den şirketleri çekmek istersen burada ekle
-                    Main_image_URL = null // RAWG'den resim linkini ekleyebilirsin
+                    Main_image_URL = null, // RAWG'den resim linkini ekleyebilirsin
+                    Createdat = DateTime.Now
                 };
 
                 var gFilter = Builders<Game>.Filter.Eq(x => x.Game_Name, game.Game_Name);
@@ -240,6 +241,7 @@ crewNames.AddRange(detail.Publishers?.Select(p => p.Name) ?? Enumerable.Empty<st
             .Set(x => x.CompanyIds, new List<string>())
             .Set(x => x.Cast, castNames)     // ← NEW
             .Set(x => x.Crew, crewNames)
+            .Set(x => x.Createdat, DateTime.Now )
             .SetOnInsert(x => x.Game_Name, detail.Name)
             .SetOnInsert(x => x.Id, ObjectId.GenerateNewId().ToString());
 

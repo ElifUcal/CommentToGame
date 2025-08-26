@@ -55,7 +55,8 @@ public class AuthController : ControllerBase
             Email = email,                                 // <— normalize kaydet
             PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password),
             Birthdate = request.Birthdate,
-            Country = request.Country.Trim()
+            Country = request.Country.Trim(),
+            Createdat = DateTime.Now
         };
 
         await _users.InsertOneAsync(user);

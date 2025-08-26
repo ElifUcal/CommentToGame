@@ -28,6 +28,9 @@ public class User
     [BsonElement("userType")]
     public UserType UserType { get; set; } = UserType.User; // varsayılan: User
 
+    [BsonElement("createdat")]
+    public required DateTime Createdat { get; set; } = DateTime.Now;
+
     [BsonElement("Birthdate")]
     public required DateTime Birthdate { get; set; }
 
