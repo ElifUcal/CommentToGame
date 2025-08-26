@@ -32,7 +32,7 @@ public class AdminController : ControllerBase
 
         _games = db.GetCollection<Game>("Games");
         _details = db.GetCollection<Game_Details>("GameDetails");
-        _genres  = db.GetCollection<Genre>("Genres");
+        _genres = db.GetCollection<Genre>("Genres");
         _platforms = db.GetCollection<Platform>("Platforms");
         _users = db.GetCollection<User>(usersCollectionName);
         _config = config ?? throw new ArgumentNullException(nameof(config));
@@ -263,12 +263,12 @@ public class AdminController : ControllerBase
     }
 
 
-      [HttpGet("games")]
+    [HttpGet("games")]
     [Authorize(Roles = "Admin")]
     public async Task<ActionResult<List<GameListItemDto>>> GetGamesAsync(
-        [FromQuery] int skip = 0,
-        [FromQuery] int take = 50,
-        [FromQuery] string? q = null)
+      [FromQuery] int skip = 0,
+      [FromQuery] int take = 50,
+      [FromQuery] string? q = null)
     {
         if (skip < 0) skip = 0;
         if (take <= 0 || take > 200) take = 50;
@@ -346,20 +346,35 @@ public class AdminController : ControllerBase
 
             return new GameListItemDto
             {
-                Id        = g.Id,
-                Cover     = g.Main_image_URL,
-                Title     = g.Game_Name,
-                Release   = g.Release_Date,
+                Id = g.Id,
+                Cover = g.Main_image_URL,
+                Title = g.Game_Name,
+                Release = g.Release_Date,
                 Developer = det?.Developer ?? g.Studio, // developer öncelik
-                Genres    = genreNames,
+                Genres = genreNames,
                 Platforms = platformNames,              // YENİ
-                Story     = det?.Story
+                Story = det?.Story
             };
         })
         .ToList();
 
         return Ok(dto);
     }
+    
+    [HttpDelete("games/{id}")]
+[Authorize(Roles = "Admin")]
+public async Task<IActionResult> DeleteGame(string id, CancellationToken ct)
+{
+    var game = await _games.Find(g => g.Id == id).FirstOrDefaultAsync(ct);
+    if (game == null)
+        return NotFound(new { message = "Game not found" });
+
+    await _games.DeleteOneAsync(g => g.Id == id, ct);
+    await _details.DeleteManyAsync(d => d.GameId == id, ct); // detayları da sil
+    // gerekiyorsa genres/platforms silmeye gerek yok (onlar ortak kullanılıyor)
+
+    return Ok(new { message = $"Game {id} deleted" });
+}
 }
 
 
