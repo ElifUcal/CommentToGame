@@ -360,21 +360,143 @@ public class AdminController : ControllerBase
 
         return Ok(dto);
     }
-    
+
     [HttpDelete("games/{id}")]
+    [Authorize(Roles = "Admin")]
+    public async Task<IActionResult> DeleteGame(string id, CancellationToken ct)
+    {
+        var game = await _games.Find(g => g.Id == id).FirstOrDefaultAsync(ct);
+        if (game == null)
+            return NotFound(new { message = "Game not found" });
+
+        await _games.DeleteOneAsync(g => g.Id == id, ct);
+        await _details.DeleteManyAsync(d => d.GameId == id, ct); // detayları da sil
+                                                                 // gerekiyorsa genres/platforms silmeye gerek yok (onlar ortak kullanılıyor)
+
+        return Ok(new { message = $"Game {id} deleted" });
+    }
+
+
+    [HttpGet("games/{id}")]
 [Authorize(Roles = "Admin")]
-public async Task<IActionResult> DeleteGame(string id, CancellationToken ct)
+public async Task<ActionResult<GameDetailDto>> GetGameById(string id, CancellationToken ct)
 {
     var game = await _games.Find(g => g.Id == id).FirstOrDefaultAsync(ct);
     if (game == null)
         return NotFound(new { message = "Game not found" });
 
-    await _games.DeleteOneAsync(g => g.Id == id, ct);
-    await _details.DeleteManyAsync(d => d.GameId == id, ct); // detayları da sil
-    // gerekiyorsa genres/platforms silmeye gerek yok (onlar ortak kullanılıyor)
+    var details = await _details.Find(d => d.GameId == id).FirstOrDefaultAsync(ct);
 
-    return Ok(new { message = $"Game {id} deleted" });
+    // --- GENRES ---
+    var genreNames = new List<string>();
+    if (details?.GenreIds != null && details.GenreIds.Count > 0)
+    {
+        var genres = await _genres.Find(g => details.GenreIds.Contains(g.Id)).ToListAsync(ct);
+        genreNames = genres.Select(g => g.Name).ToList(); // Genre modelinde "Name" property olduğunu varsayıyorum
+    }
+
+    // --- PLATFORMS ---
+    var platformNames = new List<string>();
+    if (details?.PlatformIds != null && details.PlatformIds.Count > 0)
+    {
+        var plats = await _platforms.Find(p => details.PlatformIds.Contains(p.Id)).ToListAsync(ct);
+        platformNames = plats.Select(p => p.Name).ToList(); // Platform modelinde "Name" property olduğunu varsayıyorum
+    }
+
+    var dto = new GameDetailDto
+    {
+        Id = game.Id,
+        Title = game.Game_Name,
+        ReleaseDate = game.Release_Date,
+        Studio = game.Studio,
+        GgdbRating = game.GgDb_Rating,
+        MetacriticRating = game.Metacritic_Rating,
+        Cover = game.Main_image_URL,
+        Video = game.Main_video_URL,
+
+        Developer = details?.Developer,
+        Publisher = details?.Publisher,
+        Genres = genreNames,
+        Platforms = platformNames,
+        Story = details?.Story,
+        Tags = details?.Tags ?? new List<string>(),
+        Dlcs = details?.DLCs ?? new List<string>(),
+        Crew = game.Crew,
+        Awards = details?.Awards,
+        GameEngine = details?.Engines ?? new List<string>()
+    };
+
+    return Ok(dto);
 }
+
+[HttpPut("games/{id}")]
+[Authorize(Roles = "Admin")]
+public async Task<IActionResult> UpdateGame(string id, [FromBody] GameDetailDto dto, CancellationToken ct)
+{
+    if (dto == null || string.IsNullOrWhiteSpace(dto.Title))
+        return BadRequest(new { message = "Invalid payload: 'title' is required." });
+
+    // ---- Game (temel) ----
+    var game = await _games.Find(g => g.Id == id).FirstOrDefaultAsync(ct);
+    if (game == null)
+        return NotFound(new { message = "Game not found" });
+
+    game.Game_Name = dto.Title;
+    game.Release_Date = dto.ReleaseDate;
+    game.Studio = dto.Studio;
+    game.GgDb_Rating = dto.GgdbRating;
+    game.Metacritic_Rating = dto.MetacriticRating;
+    game.Main_image_URL = dto.Cover;
+    game.Main_video_URL = dto.Video;
+    game.Crew = dto.Crew ?? new List<string>();
+
+    await _games.ReplaceOneAsync(g => g.Id == id, game, cancellationToken: ct);
+
+    // ---- Game_Details (detay) ----
+    var details = await _details.Find(d => d.GameId == id).FirstOrDefaultAsync(ct)
+                  ?? new Game_Details { GameId = id };
+
+    details.Developer = dto.Developer;
+    details.Publisher = dto.Publisher;
+    details.Story = dto.Story;
+    details.Tags = dto.Tags ?? new List<string>();
+    details.DLCs = dto.Dlcs ?? new List<string>();
+    details.Awards = dto.Awards;
+    details.Engines = dto.GameEngine ?? new List<string>();
+
+    // Genres (isim → id)
+    if (dto.Genres != null)
+    {
+        // Not: Genre modelinde "Name" alanı olduğunu varsayıyoruz.
+        var genreDocs = await _genres
+            .Find(g => dto.Genres.Contains(g.Name))
+            .Project(g => new { g.Id, g.Name })
+            .ToListAsync(ct);
+
+        details.GenreIds = genreDocs.Select(x => x.Id).ToList();
+        // İstersen bulunamayan genre isimleri için uyarı üretebilirsin:
+        // var missingGenres = dto.Genres.Except(genreDocs.Select(x => x.Name)).ToList();
+    }
+
+    // Platforms (isim → id)
+    if (dto.Platforms != null)
+    {
+        // Not: Platform modelinde "Name" alanı olduğunu varsayıyoruz.
+        var platformDocs = await _platforms
+            .Find(p => dto.Platforms.Contains(p.Name))
+            .Project(p => new { p.Id, p.Name })
+            .ToListAsync(ct);
+
+        details.PlatformIds = platformDocs.Select(x => x.Id).ToList();
+        // var missingPlatforms = dto.Platforms.Except(platformDocs.Select(x => x.Name)).ToList();
+    }
+
+    await _details.ReplaceOneAsync(d => d.GameId == id, details, new ReplaceOptions { IsUpsert = true }, ct);
+
+    return Ok(new { message = $"Game {id} updated" });
+}
+
+
 }
 
 
