@@ -1321,7 +1321,7 @@
           }
         }
       },
-      "MongoDB.Bson/3.4.2": {
+      "MongoDB.Bson/3.4.3": {
         "type": "package",
         "dependencies": {
           "System.Memory": "4.5.5",
@@ -1338,12 +1338,12 @@
           }
         }
       },
-      "MongoDB.Driver/3.4.2": {
+      "MongoDB.Driver/3.4.3": {
         "type": "package",
         "dependencies": {
           "DnsClient": "1.6.1",
           "Microsoft.Extensions.Logging.Abstractions": "2.0.0",
-          "MongoDB.Bson": "3.4.2",
+          "MongoDB.Bson": "3.4.3",
           "SharpCompress": "0.30.1",
           "Snappier": "1.0.0",
           "System.Buffers": "4.5.1",
@@ -4262,10 +4262,10 @@
         "version.txt"
       ]
     },
-    "MongoDB.Bson/3.4.2": {
-      "sha512": "FubVWPnefWjGa3aE0U/b3fn0p9S1KPIZwLAA4PguwYHNybzesaEPglscpY9YGVN72ggGeig1e88G9D5jCnY70w==",
+    "MongoDB.Bson/3.4.3": {
+      "sha512": "ZB2nCdlWtmDGItkDFh2E2kfYlXaItG414t9Np7CZhpftLypemYnxtdI52H+0b8RPqoUJD7bUvrf598sDTJd5iA==",
       "type": "package",
-      "path": "mongodb.bson/3.4.2",
+      "path": "mongodb.bson/3.4.3",
       "files": [
         ".nupkg.metadata",
         ".signature.p7s",
@@ -4276,15 +4276,15 @@
         "lib/net6.0/MongoDB.Bson.xml",
         "lib/netstandard2.1/MongoDB.Bson.dll",
         "lib/netstandard2.1/MongoDB.Bson.xml",
-        "mongodb.bson.3.4.2.nupkg.sha512",
+        "mongodb.bson.3.4.3.nupkg.sha512",
         "mongodb.bson.nuspec",
         "packageIcon.png"
       ]
     },
-    "MongoDB.Driver/3.4.2": {
-      "sha512": "uB2VlLZO4kGvn499Xbdtu/BfAX6wMqpXlWhDonPGGzyCD+Cho+g0M5XIBjPh/8EFrWmBMKvRamW+AWFjgxx+pw==",
+    "MongoDB.Driver/3.4.3": {
+      "sha512": "yE6XQiDoFwTH4Xq/STJCbzsz+74RuzCXU45g9gaWFlLyy95xG8utuj+e64uXSbONtzabbp1O/8vfA3/HJXL6Pg==",
       "type": "package",
-      "path": "mongodb.driver/3.4.2",
+      "path": "mongodb.driver/3.4.3",
       "files": [
         ".nupkg.metadata",
         ".signature.p7s",
@@ -4295,7 +4295,7 @@
         "lib/net6.0/MongoDB.Driver.xml",
         "lib/netstandard2.1/MongoDB.Driver.dll",
         "lib/netstandard2.1/MongoDB.Driver.xml",
-        "mongodb.driver.3.4.2.nupkg.sha512",
+        "mongodb.driver.3.4.3.nupkg.sha512",
         "mongodb.driver.nuspec",
         "packageIcon.png"
       ]
@@ -5195,30 +5195,37 @@
       "Microsoft.AspNetCore.SignalR >= 1.2.0",
       "Microsoft.EntityFrameworkCore >= 9.0.7",
       "Microsoft.EntityFrameworkCore.Tools >= 9.0.7",
-      "MongoDB.Driver >= 3.4.2",
+      "MongoDB.Driver >= 3.4.3",
       "Pomelo.EntityFrameworkCore.MySql >= 9.0.0-preview.3.efcore.9.0.0",
       "Swashbuckle.AspNetCore >= 9.0.3"
     ]
   },
   "packageFolders": {
-    "/Users/elifnazucal/.nuget/packages/": {}
+    "C:\\Users\\Hamza Enes\\.nuget\\packages\\": {},
+    "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages": {}
   },
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "/Users/elifnazucal/Desktop/GGDB/CommentToGame/CommentToGame.csproj",
+      "projectUniqueName": "C:\\Users\\Hamza Enes\\OneDrive\\Masaüstü\\GGDBv2\\commenttogame\\CommentToGame.csproj",
       "projectName": "CommentToGame",
-      "projectPath": "/Users/elifnazucal/Desktop/GGDB/CommentToGame/CommentToGame.csproj",
-      "packagesPath": "/Users/elifnazucal/.nuget/packages/",
-      "outputPath": "/Users/elifnazucal/Desktop/GGDB/CommentToGame/obj/",
+      "projectPath": "C:\\Users\\Hamza Enes\\OneDrive\\Masaüstü\\GGDBv2\\commenttogame\\CommentToGame.csproj",
+      "packagesPath": "C:\\Users\\Hamza Enes\\.nuget\\packages\\",
+      "outputPath": "C:\\Users\\Hamza Enes\\OneDrive\\Masaüstü\\GGDBv2\\commenttogame\\obj\\",
       "projectStyle": "PackageReference",
+      "fallbackFolders": [
+        "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
+      ],
       "configFilePaths": [
-        "/Users/elifnazucal/.nuget/NuGet/NuGet.Config"
+        "C:\\Users\\Hamza Enes\\AppData\\Roaming\\NuGet\\NuGet.Config",
+        "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.FallbackLocation.config",
+        "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
       ],
       "originalTargetFrameworks": [
         "net9.0"
       ],
       "sources": {
+        "C:\\Program Files (x86)\\Microsoft SDKs\\NuGetPackages\\": {},
         "https://api.nuget.org/v3/index.json": {}
       },
       "frameworks": {
@@ -5237,7 +5244,7 @@
         "auditLevel": "low",
         "auditMode": "direct"
       },
-      "SdkAnalysisLevel": "9.0.200"
+      "SdkAnalysisLevel": "9.0.300"
     },
     "frameworks": {
       "net9.0": {
@@ -5271,7 +5278,7 @@
           },
           "MongoDB.Driver": {
             "target": "Package",
-            "version": "[3.4.2, )"
+            "version": "[3.4.3, )"
           },
           "Pomelo.EntityFrameworkCore.MySql": {
             "target": "Package",
@@ -5301,7 +5308,7 @@
             "privateAssets": "all"
           }
         },
-        "runtimeIdentifierGraphPath": "/usr/local/share/dotnet/sdk/9.0.202/PortableRuntimeIdentifierGraph.json"
+        "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\9.0.300/PortableRuntimeIdentifierGraph.json"
       }
     }
   }
