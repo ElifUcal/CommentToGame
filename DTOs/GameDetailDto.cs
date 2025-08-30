@@ -36,4 +36,9 @@ public class GameDetailDto
 
     // Store links
     public List<StoreLinkDto> StoreLinks { get; set; } = new();
+
+    public List<string> Soundtrack { get; set; } = new();
+
+    public List<string> Screenshots { get; set; } = new();
+    public List<TrailerDto> Trailers    { get; set; } = new();
 }

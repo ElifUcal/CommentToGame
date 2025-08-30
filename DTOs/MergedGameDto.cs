@@ -49,4 +49,8 @@ public sealed class MergedGameDto
     public List<string> Crew { get; set; } = new();
 
     public DateTime Createdat { get; set; } = DateTime.Now;
+
+    
+    public List<string>? Screenshots { get; set; }      // YENİ
+    public List<string>? Trailers { get; set; }         // YENİ
 }

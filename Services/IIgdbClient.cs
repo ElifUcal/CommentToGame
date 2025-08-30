@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using CommentToGame.Models;
 using static CommentToGame.DTOs.IGdbDto;
 using System.Text.RegularExpressions;
+using CommentToGame.DTOs;
 
 
 namespace CommentToGame.Services
@@ -31,5 +32,7 @@ namespace CommentToGame.Services
 
         Task<(List<string> cast, List<string> crew)> GetCreditsAsync(long gameId, CancellationToken ct = default);
 
-    }
+        Task<(List<string> screenshots, List<TrailerDto> trailers)> GetMediaAsync(long gameId, CancellationToken ct = default);
 }
+
+    }

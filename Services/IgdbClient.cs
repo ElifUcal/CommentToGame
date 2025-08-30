@@ -344,6 +344,64 @@ private sealed class GameRowSearch
         return (audio.Distinct().ToList(), subs.Distinct().ToList(), ui.Distinct().ToList());
     }
 
+    private static string IgdbImage(string imageId, string size = "t_screenshot_big")
+    => $"https://images.igdb.com/igdb/image/upload/{size}/{imageId}.jpg";
+
+private static TrailerDto IgdbVideoToTrailer(string videoId) => new TrailerDto
+{
+    Platform  = "youtube",
+    Url       = $"https://www.youtube.com/watch?v={videoId}",
+    YouTubeId = videoId
+};
+
+// IGDB: games -> screenshots.image_id & videos.video_id
+// Services/IgdbClient.cs  (sınıfın içine ekle)
+
+public async Task<(List<string> screenshots, List<TrailerDto> trailers)> GetMediaAsync(long gameId, CancellationToken ct = default)
+{
+    // 1) Screenshots
+    var ssRows = await PostAsync<ScreenshotRow>(
+        "screenshots",
+        $"fields image_id; where game = {gameId}; limit 100;",
+        ct);
+
+    // IGDB image url formatı: https://images.igdb.com/igdb/image/upload/<size>/<image_id>.jpg
+    // Uygun size: t_screenshot_big (ya da t_1080p)
+    var screenshots = ssRows
+        .Select(r => r.image_id)
+        .Where(id => !string.IsNullOrWhiteSpace(id))
+        .Select(id => $"https://images.igdb.com/igdb/image/upload/t_screenshot_big/{id}.jpg")
+        .Distinct()
+        .ToList();
+
+    // 2) Game videos (YouTube)
+    var vidRows = await PostAsync<GameVideoRow>(
+        "game_videos",
+        $"fields video_id,name; where game = {gameId}; limit 100;",
+        ct);
+
+    var trailers = vidRows
+        .Select(v => new TrailerDto
+        {
+            Platform  = "YouTube",
+            YouTubeId = v.video_id,
+            Url       = string.IsNullOrWhiteSpace(v.video_id) ? null : $"https://www.youtube.com/watch?v={v.video_id}",
+            
+        })
+        .Where(t => !string.IsNullOrWhiteSpace(t.YouTubeId) || !string.IsNullOrWhiteSpace(t.Url))
+        .DistinctBy(t => t.YouTubeId ?? t.Url) // .NET 6+ varsa; yoksa GroupBy ile yap
+        .ToList();
+
+    return (screenshots, trailers);
+}
+
+// --- private row modellerini dosyanın altına ekle ---
+private sealed class ScreenshotRow { public long id { get; set; } public string? image_id { get; set; } }
+private sealed class GameVideoRow  { public long id { get; set; } public string? video_id { get; set; } public string? name { get; set; } }
+
+
+
+
     public async Task<List<string>> GetAwardsLikeEventsAsync(long gameId, CancellationToken ct = default)
     {
         // Oyunun yer aldığı etkinlikleri çek

@@ -62,6 +62,9 @@ namespace CommentToGame.Services
             public List<string> Cast { get; set; } = new();
             public List<string> Crew { get; set; } = new();
             public DateTime Createdat { get; set; } = DateTime.Now;
+
+            public List<string>    Screenshots { get; set; } = new();
+            public List<TrailerDto> Trailers   { get; set; } = new();
         }
 
         public static MergedGameDto Merge(
@@ -71,7 +74,10 @@ namespace CommentToGame.Services
             List<StoreLink>? storeLinks = null,
             IEnumerable<string>? rawgCast = null,
             IEnumerable<string>? rawgCrew = null,
-            IEnumerable<string>? igdbDlcs = null)
+            IEnumerable<string>? igdbDlcs = null,
+            IEnumerable<string>? igdbScreenshots = null,
+            IEnumerable<TrailerDto>? igdbTrailers = null
+            )
         {
             var dto = new MergedGameDto();
 
@@ -149,12 +155,72 @@ namespace CommentToGame.Services
             if (rawgCast != null) dto.Cast = rawgCast.WhereNotEmpty().Distinct().ToList();
             if (rawgCrew != null) dto.Crew = rawgCrew.WhereNotEmpty().Distinct().ToList();
 
+           dto.Screenshots = (igdbScreenshots ?? Enumerable.Empty<string>())
+                .Where(u => !string.IsNullOrWhiteSpace(u))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Take(12)
+                .ToList();
+
+            dto.Trailers = (igdbTrailers ?? Enumerable.Empty<TrailerDto>())
+                .Where(t => !string.IsNullOrWhiteSpace(t?.Url) || !string.IsNullOrWhiteSpace(t?.YouTubeId))
+                .GroupBy(t => string.IsNullOrWhiteSpace(t.YouTubeId) ? ("url:" + t.Url) : ("yt:" + t.YouTubeId),
+                        StringComparer.OrdinalIgnoreCase)
+                .Select(g => g.First())
+                .Take(6)
+                .ToList();
+
             dto.Createdat = DateTime.Now;
 
             return dto;
         }
 
         // ---------- helpers ----------
+
+        private static List<string> MergeScreens(IEnumerable<string>? a, IEnumerable<string>? b, int take = 12)
+{
+    var res = new List<string>();
+    var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    void add(IEnumerable<string>? src)
+    {
+        if (src == null) return;
+        foreach (var u in src)
+        {
+            var v = (u ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(v)) continue;
+            if (seen.Add(v))
+            {
+                res.Add(v);
+                if (res.Count >= take) break;
+            }
+        }
+    }
+    add(a); add(b);
+    return res;
+}
+
+private static List<TrailerDto> MergeTrailers(IEnumerable<TrailerDto>? a, IEnumerable<TrailerDto>? b, int take = 6)
+{
+    var res = new List<TrailerDto>();
+    var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+    IEnumerable<TrailerDto> order(IEnumerable<TrailerDto>? src)
+        => (src ?? Enumerable.Empty<TrailerDto>())
+           .OrderByDescending(t => string.Equals(t?.Platform, "youtube", StringComparison.OrdinalIgnoreCase));
+
+    foreach (var t in order(a).Concat(order(b)))
+    {
+        if (t == null) continue;
+        var url = (t.Url ?? "").Trim();
+        if (string.IsNullOrWhiteSpace(url)) continue;
+        var key = !string.IsNullOrWhiteSpace(t.YouTubeId) ? $"yt:{t.YouTubeId}" : $"url:{url}";
+        if (seen.Add(key))
+        {
+            res.Add(new TrailerDto { Platform = t.Platform, Url = url, YouTubeId = t.YouTubeId });
+            if (res.Count >= take) break;
+        }
+    }
+    return res;
+}
 
         private static int? ToHours(int? seconds)
             => seconds.HasValue ? (int?)Math.Round(seconds.Value / 3600.0) : null;

@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using CommentToGame.Data;            // MongoDbService
+using CommentToGame.DTOs;
 using CommentToGame.Models;
 using MongoDB.Bson;
 using MongoDB.Driver;
@@ -160,6 +161,26 @@ public class PreviewImportService
             updates.Add(ub.Set(x => x.RecRequirementId, recRef.Value.id));
             
         }
+       var screenshots = (dto.Screenshots ?? dto.Images ?? new List<string>())
+    .Where(u => !string.IsNullOrWhiteSpace(u))
+    .Distinct(StringComparer.OrdinalIgnoreCase)
+    .ToList();
+
+// TrailerDto listesi üzerinde filtrele + dedupe
+var trailers = (dto.Trailers ?? new List<TrailerDto>())
+    .Where(t => t != null && (!string.IsNullOrWhiteSpace(t.Url) || !string.IsNullOrWhiteSpace(t.YouTubeId)))
+    .GroupBy(t =>
+        string.IsNullOrWhiteSpace(t.YouTubeId)
+            ? "url:" + t.Url
+            : "yt:" + t.YouTubeId,
+        StringComparer.OrdinalIgnoreCase
+    )
+    .Select(g => g.First())
+    .ToList();
+
+
+    updates.Add(ub.Set(x => x.Screenshots, screenshots));
+    updates.Add(ub.Set(x => x.Trailers,  trailers));
 
         // Eski gömülü obje alanlarını temizle (varsa)
         updates.Add(ub.Unset("MinRequirement"));
@@ -171,23 +192,7 @@ public class PreviewImportService
         await _details.UpdateOneAsync(detFilter, ub.Combine(updates), new UpdateOptions { IsUpsert = true }, ct);
 
         // ---------- 5) Gallery ----------
-        if (_galleries != null && dto.Images is { Count: > 0 })
-        {
-            await _galleries.DeleteManyAsync(x => x.GameId == game.Id, ct);
-
-            var batch = dto.Images
-                .Where(u => !string.IsNullOrWhiteSpace(u))
-                .Select(u => new Gallery
-                {
-                    Id     = ObjectId.GenerateNewId().ToString(),
-                    GameId = game.Id,
-                    Urls = null
-                })
-                .ToList();
-
-            if (batch.Count > 0)
-                await _galleries.InsertManyAsync(batch, cancellationToken: ct);
-        }
+        
 
         return game.Id;
     }

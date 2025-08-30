@@ -451,6 +451,9 @@ public async Task<ActionResult<GameDetailDto>> GetGameById(string id, Cancellati
         AudioLanguages = details?.Audio_Language ?? new List<string>(),
         SubtitleLanguages = details?.Subtitles ?? new List<string>(),
         InterfaceLanguages = details?.Interface_Language ?? new List<string>(),
+        Soundtrack = game.Soundtrack ?? new List<string>(),
+        Screenshots = details?.Screenshots ?? new List<string>(),
+        Trailers    = details?.Trailers    ?? new List<TrailerDto>(),
 
     StoreLinks = (details?.Store_Links ?? new List<StoreLink>())
     .Select(s => new StoreLinkDto
@@ -488,6 +491,7 @@ public async Task<IActionResult> UpdateGame(string id, [FromBody] GameDetailDto 
     game.Main_image_URL = dto.Cover;
     game.Main_video_URL = dto.Video;
     game.Crew = dto.Crew ?? new List<string>();
+    game.Soundtrack = dto.Soundtrack ?? new List<string>();
 
     await _games.ReplaceOneAsync(g => g.Id == id, game, cancellationToken: ct);
 
@@ -509,36 +513,39 @@ public async Task<IActionResult> UpdateGame(string id, [FromBody] GameDetailDto 
     details.Audio_Language = dto.AudioLanguages ?? new List<string>();
     details.Subtitles = dto.SubtitleLanguages ?? new List<string>();
     details.Interface_Language = dto.InterfaceLanguages ?? new List<string>();
+    details.Screenshots = dto.Screenshots ?? new List<string>();
+    details.Trailers    = dto.Trailers    ?? new List<TrailerDto>();
+
 
     // ---- System Requirements (Min / Rec) — upsert + Id bağlama ----
         // dto.MinRequirements / dto.RecRequirements string (metin) kabul edildiği varsayımıyla
-       if (dto.MinRequirements is { Length: >0 } minText) // null veya whitespace değil
-{
-    if (!string.IsNullOrEmpty(details.MinRequirementId))
-    {
-        var upd = Builders<MinRequirement>.Update.Set(x => x.Text, minText);
-        await _minReqs.UpdateOneAsync(
-            Builders<MinRequirement>.Filter.Eq(x => x.Id, details.MinRequirementId),
-            upd,
-            cancellationToken: ct
-        );
-    }
-    else
-    {
-        var doc = new MinRequirement { Text = minText }; // _id’yi Mongo versin
-        await _minReqs.InsertOneAsync(doc, cancellationToken: ct);
-        details.MinRequirementId = doc.Id;
-    }
-}
-else
-{
-    // referansı temizle (belgeyi silmek opsiyonel)
-    if (!string.IsNullOrEmpty(details.MinRequirementId))
-    {
-        try { await _minReqs.DeleteOneAsync(x => x.Id == details.MinRequirementId, ct); } catch { /* yoksay */ }
-    }
-    details.MinRequirementId = null;
-}
+        if (dto.MinRequirements is { Length: > 0 } minText) // null veya whitespace değil
+        {
+            if (!string.IsNullOrEmpty(details.MinRequirementId))
+            {
+                var upd = Builders<MinRequirement>.Update.Set(x => x.Text, minText);
+                await _minReqs.UpdateOneAsync(
+                    Builders<MinRequirement>.Filter.Eq(x => x.Id, details.MinRequirementId),
+                    upd,
+                    cancellationToken: ct
+                );
+            }
+            else
+            {
+                var doc = new MinRequirement { Text = minText }; // _id’yi Mongo versin
+                await _minReqs.InsertOneAsync(doc, cancellationToken: ct);
+                details.MinRequirementId = doc.Id;
+            }
+        }
+        else
+        {
+            // referansı temizle (belgeyi silmek opsiyonel)
+            if (!string.IsNullOrEmpty(details.MinRequirementId))
+            {
+                try { await _minReqs.DeleteOneAsync(x => x.Id == details.MinRequirementId, ct); } catch { /* yoksay */ }
+            }
+            details.MinRequirementId = null;
+        }
 
 // REC
 if (dto.RecRequirements is { Length: >0 } recText)

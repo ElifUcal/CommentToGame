@@ -1,3 +1,4 @@
+using CommentToGame.DTOs;
 using MongoDB.Bson;
 using MongoDB.Bson.Serialization.Attributes;
 
@@ -48,13 +49,13 @@ public class Game_Details
 
     [BsonRepresentation(BsonType.ObjectId)]
     public string? MinRequirementId { get; set; }
-    
+
     [BsonIgnore] public MinRequirement? MinRequirement { get; set; }
 
     [BsonRepresentation(BsonType.ObjectId)]
     public string? RecRequirementId { get; set; }
 
-     
+
     [BsonIgnore] public RecRequirement? RecRequirement { get; set; }
 
     public int? TimeToBeat_Hastily { get; set; }
@@ -64,6 +65,10 @@ public class Game_Details
     public List<StoreLink> Store_Links { get; set; } = new();
 
     public List<string> Engines { get; set; } = new();
+    
+    public List<string>    Screenshots { get; set; } = new();
+    public List<TrailerDto> Trailers   { get; set; } = new();
+
 
 
 }

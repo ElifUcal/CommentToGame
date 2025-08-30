@@ -89,8 +89,14 @@ namespace CommentToGame.Controllers
             var team = await _rawg.GetGameDevelopmentTeamAsync(rawgId);
             var (cast, crew) = SplitCastCrew(team);
 
+            var (igdbScreens, igdbTrailers) = await _igdb.GetMediaAsync(igdbId, ct);
+
+
             var merged = GameMerge.Merge(igdbGame, rawgGame, ttb, storeLinks, cast, crew);
             if (dlcNames.Count > 0) merged.Dlcs = dlcNames;
+
+            merged.Screenshots = igdbScreens ?? new List<string>();
+            merged.Trailers    = igdbTrailers ?? new List<TrailerDto>();
 
             return Ok(merged);
         }
