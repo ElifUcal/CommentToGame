@@ -21,6 +21,9 @@ public class AdminController : ControllerBase
     private readonly IMongoCollection<Genre> _genres;
 
     private readonly IMongoCollection<Platform> _platforms;
+
+    private readonly IMongoCollection<MinRequirement> _minReqs;
+private readonly IMongoCollection<RecRequirement> _recReqs;
     private readonly IConfiguration _config;
 
     public AdminController(MongoDbService service, IConfiguration config)
@@ -34,6 +37,8 @@ public class AdminController : ControllerBase
         _details = db.GetCollection<Game_Details>("GameDetails");
         _genres = db.GetCollection<Genre>("Genres");
         _platforms = db.GetCollection<Platform>("Platforms");
+        _minReqs = db.GetCollection<MinRequirement>("MinRequirements");
+        _recReqs = db.GetCollection<RecRequirement>("RecRequirements");
         _users = db.GetCollection<User>(usersCollectionName);
         _config = config ?? throw new ArgumentNullException(nameof(config));
     }
@@ -403,6 +408,19 @@ public async Task<ActionResult<GameDetailDto>> GetGameById(string id, Cancellati
         platformNames = plats.Select(p => p.Name).ToList(); // Platform modelinde "Name" property olduğunu varsayıyorum
     }
 
+    string? minText = null, recText = null;
+    if (!string.IsNullOrEmpty(details?.MinRequirementId))
+    {
+        var m = await _minReqs.Find(x => x.Id == details.MinRequirementId).FirstOrDefaultAsync(ct);
+        minText = m?.Text;
+    }
+    if (!string.IsNullOrEmpty(details?.RecRequirementId))
+    {
+        var r = await _recReqs.Find(x => x.Id == details.RecRequirementId).FirstOrDefaultAsync(ct);
+        recText = r?.Text;
+    }
+
+
     var dto = new GameDetailDto
     {
         Id = game.Id,
@@ -423,7 +441,15 @@ public async Task<ActionResult<GameDetailDto>> GetGameById(string id, Cancellati
         Dlcs = details?.DLCs ?? new List<string>(),
         Crew = game.Crew,
         Awards = details?.Awards,
-        GameEngine = details?.Engines ?? new List<string>()
+        GameEngine = details?.Engines ?? new List<string>(),
+
+        MinRequirements = minText,
+        RecRequirements = recText,
+        ContentWarnings = details?.Content_Warnings ?? new List<string>(),
+        AgeRatings = details?.Age_Ratings ?? new List<string>(),
+        AudioLanguages = details?.Audio_Language ?? new List<string>(),
+        SubtitleLanguages = details?.Subtitles ?? new List<string>(),
+        InterfaceLanguages = details?.Interface_Language ?? new List<string>(),
     };
 
     return Ok(dto);
@@ -463,38 +489,102 @@ public async Task<IActionResult> UpdateGame(string id, [FromBody] GameDetailDto 
     details.DLCs = dto.Dlcs ?? new List<string>();
     details.Awards = dto.Awards;
     details.Engines = dto.GameEngine ?? new List<string>();
+    
+    details.Content_Warnings = dto.ContentWarnings ?? new List<string>();
+    details.Age_Ratings = dto.AgeRatings ?? new List<string>();
+    
+    details.Audio_Language = dto.AudioLanguages ?? new List<string>();
+    details.Subtitles = dto.SubtitleLanguages ?? new List<string>();
+    details.Interface_Language = dto.InterfaceLanguages ?? new List<string>();
 
-    // Genres (isim → id)
+    // ---- System Requirements (Min / Rec) — upsert + Id bağlama ----
+        // dto.MinRequirements / dto.RecRequirements string (metin) kabul edildiği varsayımıyla
+       if (dto.MinRequirements is { Length: >0 } minText) // null veya whitespace değil
+{
+    if (!string.IsNullOrEmpty(details.MinRequirementId))
+    {
+        var upd = Builders<MinRequirement>.Update.Set(x => x.Text, minText);
+        await _minReqs.UpdateOneAsync(
+            Builders<MinRequirement>.Filter.Eq(x => x.Id, details.MinRequirementId),
+            upd,
+            cancellationToken: ct
+        );
+    }
+    else
+    {
+        var doc = new MinRequirement { Text = minText }; // _id’yi Mongo versin
+        await _minReqs.InsertOneAsync(doc, cancellationToken: ct);
+        details.MinRequirementId = doc.Id;
+    }
+}
+else
+{
+    // referansı temizle (belgeyi silmek opsiyonel)
+    if (!string.IsNullOrEmpty(details.MinRequirementId))
+    {
+        try { await _minReqs.DeleteOneAsync(x => x.Id == details.MinRequirementId, ct); } catch { /* yoksay */ }
+    }
+    details.MinRequirementId = null;
+}
+
+// REC
+if (dto.RecRequirements is { Length: >0 } recText)
+{
+    if (!string.IsNullOrEmpty(details.RecRequirementId))
+    {
+        var upd = Builders<RecRequirement>.Update.Set(x => x.Text, recText);
+        await _recReqs.UpdateOneAsync(
+            Builders<RecRequirement>.Filter.Eq(x => x.Id, details.RecRequirementId),
+            upd,
+            cancellationToken: ct
+        );
+    }
+    else
+    {
+        var doc = new RecRequirement { Text = recText };
+        await _recReqs.InsertOneAsync(doc, cancellationToken: ct);
+        details.RecRequirementId = doc.Id;
+    }
+}
+else
+{
+    if (!string.IsNullOrEmpty(details.RecRequirementId))
+    {
+        try { await _recReqs.DeleteOneAsync(x => x.Id == details.RecRequirementId, ct); } catch { /* yoksay */ }
+    }
+    details.RecRequirementId = null;
+}
+
+    // ---- Genres (isim → id)
     if (dto.Genres != null)
     {
-        // Not: Genre modelinde "Name" alanı olduğunu varsayıyoruz.
         var genreDocs = await _genres
             .Find(g => dto.Genres.Contains(g.Name))
             .Project(g => new { g.Id, g.Name })
             .ToListAsync(ct);
 
         details.GenreIds = genreDocs.Select(x => x.Id).ToList();
-        // İstersen bulunamayan genre isimleri için uyarı üretebilirsin:
-        // var missingGenres = dto.Genres.Except(genreDocs.Select(x => x.Name)).ToList();
     }
 
-    // Platforms (isim → id)
+    // ---- Platforms (isim → id)
     if (dto.Platforms != null)
     {
-        // Not: Platform modelinde "Name" alanı olduğunu varsayıyoruz.
         var platformDocs = await _platforms
             .Find(p => dto.Platforms.Contains(p.Name))
             .Project(p => new { p.Id, p.Name })
             .ToListAsync(ct);
 
         details.PlatformIds = platformDocs.Select(x => x.Id).ToList();
-        // var missingPlatforms = dto.Platforms.Except(platformDocs.Select(x => x.Name)).ToList();
+        
     }
+
+    
 
     await _details.ReplaceOneAsync(d => d.GameId == id, details, new ReplaceOptions { IsUpsert = true }, ct);
 
     return Ok(new { message = $"Game {id} updated" });
 }
+
 
 
 }

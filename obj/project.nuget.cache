@@ -1,8 +1,8 @@
 {
   "version": 2,
-  "dgSpecHash": "OZJ/rZLE07Q=",
+  "dgSpecHash": "2V/cCZ0+v/8=",
   "success": true,
-  "projectFilePath": "C:\\Users\\Hamza Enes\\OneDrive\\Masaüstü\\GGDBv2\\commenttogame\\CommentToGame.csproj",
+  "projectFilePath": "C:\\Users\\Hamza Enes\\OneDrive\\Masaüstü\\GGDBv2\\CommentToGame\\CommentToGame.csproj",
   "expectedPackageFiles": [
     "C:\\Users\\Hamza Enes\\.nuget\\packages\\bcrypt.net-next\\4.0.3\\bcrypt.net-next.4.0.3.nupkg.sha512",
     "C:\\Users\\Hamza Enes\\.nuget\\packages\\dnsclient\\1.6.1\\dnsclient.1.6.1.nupkg.sha512",

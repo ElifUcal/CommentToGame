@@ -1,17 +1,17 @@
 {
   "format": 1,
   "restore": {
-    "C:\\Users\\Hamza Enes\\OneDrive\\Masaüstü\\GGDBv2\\commenttogame\\CommentToGame.csproj": {}
+    "C:\\Users\\Hamza Enes\\OneDrive\\Masaüstü\\GGDBv2\\CommentToGame\\CommentToGame.csproj": {}
   },
   "projects": {
-    "C:\\Users\\Hamza Enes\\OneDrive\\Masaüstü\\GGDBv2\\commenttogame\\CommentToGame.csproj": {
+    "C:\\Users\\Hamza Enes\\OneDrive\\Masaüstü\\GGDBv2\\CommentToGame\\CommentToGame.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "C:\\Users\\Hamza Enes\\OneDrive\\Masaüstü\\GGDBv2\\commenttogame\\CommentToGame.csproj",
+        "projectUniqueName": "C:\\Users\\Hamza Enes\\OneDrive\\Masaüstü\\GGDBv2\\CommentToGame\\CommentToGame.csproj",
         "projectName": "CommentToGame",
-        "projectPath": "C:\\Users\\Hamza Enes\\OneDrive\\Masaüstü\\GGDBv2\\commenttogame\\CommentToGame.csproj",
+        "projectPath": "C:\\Users\\Hamza Enes\\OneDrive\\Masaüstü\\GGDBv2\\CommentToGame\\CommentToGame.csproj",
         "packagesPath": "C:\\Users\\Hamza Enes\\.nuget\\packages\\",
-        "outputPath": "C:\\Users\\Hamza Enes\\OneDrive\\Masaüstü\\GGDBv2\\commenttogame\\obj\\",
+        "outputPath": "C:\\Users\\Hamza Enes\\OneDrive\\Masaüstü\\GGDBv2\\CommentToGame\\obj\\",
         "projectStyle": "PackageReference",
         "fallbackFolders": [
           "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
