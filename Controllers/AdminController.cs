@@ -450,6 +450,18 @@ public async Task<ActionResult<GameDetailDto>> GetGameById(string id, Cancellati
         AudioLanguages = details?.Audio_Language ?? new List<string>(),
         SubtitleLanguages = details?.Subtitles ?? new List<string>(),
         InterfaceLanguages = details?.Interface_Language ?? new List<string>(),
+
+    StoreLinks = (details?.Store_Links ?? new List<StoreLink>())
+    .Select(s => new StoreLinkDto
+    {
+        StoreId    = s.StoreId,
+        Store      = s.Store,
+        Slug       = s.Slug,
+        Domain     = s.Domain,
+        Url        = s.Url,
+        ExternalId = s.ExternalId
+    })
+    .ToList()
     };
 
     return Ok(dto);
@@ -578,8 +590,18 @@ else
         
     }
 
-    
-
+ details.Store_Links = (dto.StoreLinks ?? new List<StoreLinkDto>())
+    .Where(s => !string.IsNullOrWhiteSpace(s.Url))
+    .Select(s => new StoreLink
+    {
+        StoreId    = s.StoreId ?? 0,
+        Store      = s.Store      ?? "",
+        Slug       = s.Slug       ?? "",
+        Domain     = s.Domain     ?? "",
+        Url        = s.Url        ?? "",
+        ExternalId = s.ExternalId
+    })
+    .ToList();
     await _details.ReplaceOneAsync(d => d.GameId == id, details, new ReplaceOptions { IsUpsert = true }, ct);
 
     return Ok(new { message = $"Game {id} updated" });

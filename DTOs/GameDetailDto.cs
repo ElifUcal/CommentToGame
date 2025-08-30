@@ -13,7 +13,7 @@ public class GameDetailDto
     public string? Cover { get; set; }
     public string? Video { get; set; }
 
-    // Game_Details (detaylar)
+    // Game_Details
     public string? Developer { get; set; }
     public string? Publisher { get; set; }
     public List<string> Genres { get; set; } = new();
@@ -25,14 +25,15 @@ public class GameDetailDto
     public List<string>? Awards { get; set; }
     public List<string> GameEngine { get; set; } = new();
 
-
-    public string? MinRequirements { get; set; }      // textarea metni
-    public string? RecRequirements { get; set; }      // textarea metni
+    public string? MinRequirements { get; set; }
+    public string? RecRequirements { get; set; }
     public List<string> ContentWarnings { get; set; } = new();
     public List<string> AgeRatings { get; set; } = new();
-    
-    public List<string>? AudioLanguages { get; set; } = new();
+
+    public List<string> AudioLanguages { get; set; } = new();
     public List<string> SubtitleLanguages { get; set; } = new();
     public List<string> InterfaceLanguages { get; set; } = new();
 
+    // Store links
+    public List<StoreLinkDto> StoreLinks { get; set; } = new();
 }
