@@ -40,5 +40,38 @@ public class GameDetailDto
     public List<string> Soundtrack { get; set; } = new();
 
     public List<string> Screenshots { get; set; } = new();
-    public List<TrailerDto> Trailers    { get; set; } = new();
+    public List<TrailerDto> Trailers { get; set; } = new();
+    
+    public List<ImageDto>? Images { get; set; }     // root’ta düz liste
+public List<VideoDto>? Videos { get; set; }
+public GalleryDto? Gallery { get; set; }        // opsiyonel, geriye uyumluluk için
+
+}
+
+
+public sealed class MetaDataDto
+{
+    public string? Label { get; set; }
+    public string? Value { get; set; }
+}
+
+public sealed class ImageDto
+{
+    public string Url { get; set; } = "";
+    public string Title { get; set; } = "";
+    public List<MetaDataDto>? MetaDatas { get; set; }
+}
+
+public sealed class VideoDto
+{
+    public string Url { get; set; } = "";
+    public string Title { get; set; } = "";
+    public string? YouTubeId { get; set; } // DB’de yoksa null kalır
+    public List<MetaDataDto>? MetaDatas { get; set; }
+}
+
+public sealed class GalleryDto
+{
+    public List<ImageDto> Images { get; set; } = new();
+    public List<VideoDto> Videos { get; set; } = new();
 }

@@ -161,30 +161,85 @@ public class PreviewImportService
             updates.Add(ub.Set(x => x.RecRequirementId, recRef.Value.id));
             
         }
-       var screenshots = (dto.Screenshots ?? dto.Images ?? new List<string>())
-    .Where(u => !string.IsNullOrWhiteSpace(u))
-    .Distinct(StringComparer.OrdinalIgnoreCase)
-    .ToList();
-
-// TrailerDto listesi üzerinde filtrele + dedupe
-var trailers = (dto.Trailers ?? new List<TrailerDto>())
-    .Where(t => t != null && (!string.IsNullOrWhiteSpace(t.Url) || !string.IsNullOrWhiteSpace(t.YouTubeId)))
-    .GroupBy(t =>
-        string.IsNullOrWhiteSpace(t.YouTubeId)
-            ? "url:" + t.Url
-            : "yt:" + t.YouTubeId,
-        StringComparer.OrdinalIgnoreCase
-    )
-    .Select(g => g.First())
-    .ToList();
-
-
-    updates.Add(ub.Set(x => x.Screenshots, screenshots));
-    updates.Add(ub.Set(x => x.Trailers,  trailers));
+    
 
         // Eski gömülü obje alanlarını temizle (varsa)
         updates.Add(ub.Unset("MinRequirement"));
         updates.Add(ub.Unset("RecRequirement"));
+
+
+        // ---------- 5) Gallery upsert ----------
+        // images/videos: preview DTO'sundan geliyor
+        var maxImages = 12;
+        var maxVideos = 6;
+
+        // Images: boş olmayan URL'ler, duplicate temizliği, ilk 12
+        var imageDocs = (dto.Images ?? new List<GameMerge.ImageDto>())
+            .Where(i => i != null && !string.IsNullOrWhiteSpace(i.Url))
+            .GroupBy(i => i.Url!.Trim(), StringComparer.OrdinalIgnoreCase)
+            .Select(g => g.First())
+            .Take(maxImages)
+            .Select((i, idx) => new Image
+            {
+                Id = ObjectId.GenerateNewId().ToString(),
+                URL = i.Url!.Trim(),
+                Title = string.IsNullOrWhiteSpace(i.Title) ? $"Screenshot {idx + 1}" : i.Title!.Trim(),
+                MetaDatas = new List<MetaData>() // şimdilik boş
+            })
+            .ToList();
+
+        // Videos: YouTubeId varsa kısa linke çevir, duplicate temizliği, ilk 6
+        string ToVideoUrl(GameMerge.VideoDto v)
+        {
+            if (!string.IsNullOrWhiteSpace(v.YouTubeId))
+                return $"https://youtu.be/{v.YouTubeId}";
+            return (v.Url ?? "").Trim();
+        }
+
+        var videoDocs = (dto.Videos ?? new List<GameMerge.VideoDto>())
+            .Where(v => v != null && (!string.IsNullOrWhiteSpace(v.Url) || !string.IsNullOrWhiteSpace(v.YouTubeId)))
+            .Select(v => new
+            {
+                Key = !string.IsNullOrWhiteSpace(v.YouTubeId) ? $"yt:{v.YouTubeId!.Trim()}" : $"url:{(v.Url ?? "").Trim()}",
+                Url = ToVideoUrl(v),
+                Title = v.Title
+            })
+            .GroupBy(x => x.Key, StringComparer.OrdinalIgnoreCase)
+            .Select(g => g.First())
+            .Take(maxVideos)
+            .Select((x, idx) => new Video
+            {
+                Id = ObjectId.GenerateNewId().ToString(),
+                URL = x.Url,
+                Title = string.IsNullOrWhiteSpace(x.Title) ? $"Trailer {idx + 1}" : x.Title!.Trim(),
+                MetaDatas = new List<MetaData>() // şimdilik boş
+            })
+            .ToList();
+
+        // Gallery: GameId bazlı upsert
+        var galFilter = Builders<Gallery>.Filter.Eq(g => g.GameId, game.Id);
+
+        // SetOnInsert ile temel alanları hazırla
+        var galUpdate = Builders<Gallery>.Update
+            .SetOnInsert(g => g.Id, ObjectId.GenerateNewId().ToString())
+            .SetOnInsert(g => g.GameId, game.Id);
+
+        // Tam listeyi atomik şekilde set et (tam eşitleme)
+        galUpdate = galUpdate.Set(g => g.Images, imageDocs);
+        galUpdate = galUpdate.Set(g => g.Videos, videoDocs);
+
+        await _galleries.UpdateOneAsync(
+            galFilter,
+            galUpdate,
+            new UpdateOptions { IsUpsert = true },
+            ct
+        );
+
+
+
+
+
+
 
         if (dto.StoreLinks is { Count: > 0 })
             updates.Add(ub.Set(x => x.Store_Links, dto.StoreLinks));

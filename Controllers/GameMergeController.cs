@@ -92,11 +92,19 @@ namespace CommentToGame.Controllers
             var (igdbScreens, igdbTrailers) = await _igdb.GetMediaAsync(igdbId, ct);
 
 
-            var merged = GameMerge.Merge(igdbGame, rawgGame, ttb, storeLinks, cast, crew);
-            if (dlcNames.Count > 0) merged.Dlcs = dlcNames;
+            var merged = GameMerge.Merge(
+                igdbGame,
+                rawgGame,
+                ttb,
+                storeLinks,
+                cast,
+                crew,
+                igdbDlcs: dlcNames,
+                igdbScreenshots: igdbScreens,
+                igdbTrailers: igdbTrailers
+            );
 
-            merged.Screenshots = igdbScreens ?? new List<string>();
-            merged.Trailers    = igdbTrailers ?? new List<TrailerDto>();
+
 
             return Ok(merged);
         }

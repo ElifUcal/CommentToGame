@@ -14,5 +14,11 @@ public class Gallery
     [BsonIgnore]
     public Game? Game { get; set; }
 
+    public List<Image>? Images { get; set; }
+
+    public List<Video>? Videos { get; set; }
+
+
+
     
 }

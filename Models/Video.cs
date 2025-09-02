@@ -7,13 +7,17 @@ using MongoDB.Bson.Serialization.Attributes;
 
 namespace CommentToGame.Models;
 
-public class MetaData
+public class Video
 {
     [BsonId, BsonRepresentation(BsonType.ObjectId)]
     public string Id { get; set; } = default!;
 
-    public string? Label { get; set; }
-    
-    public string? Value { get; set; }
+    public required string URL { get; set; }
 
-    }
+    public required string Title { get; set; }
+
+    public List<MetaData>? MetaDatas { get; set; }
+
+
+
+}

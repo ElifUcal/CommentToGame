@@ -42,7 +42,7 @@ namespace CommentToGame.Services
             public List<string> Tags { get; set; } = new();
             public List<string> Genres { get; set; } = new();
             public List<string> Platforms { get; set; } = new();
-            public List<string>? Images { get; set; }
+            
 
             // ARTIK obje bekliyoruz (id ve/veya text)
             public RequirementInput? MinRequirement { get; set; }
@@ -63,9 +63,28 @@ namespace CommentToGame.Services
             public List<string> Crew { get; set; } = new();
             public DateTime Createdat { get; set; } = DateTime.Now;
 
-            public List<string>    Screenshots { get; set; } = new();
-            public List<TrailerDto> Trailers   { get; set; } = new();
+            public List<string> Screenshots { get; set; } = new();
+            public List<TrailerDto> Trailers { get; set; } = new();
+            
+             public List<ImageDto> Images { get; set; } = new();
+            public List<VideoDto> Videos { get; set; } = new();
         }
+
+        public sealed class ImageDto
+        {
+            public required string Url { get; set; }
+            public required string Title { get; set; }
+            public List<MetaData>? MetaDatas { get; set; }  // şimdilik boş kalabilir
+        }
+
+        public sealed class VideoDto
+        {
+            public required string Url { get; set; }        // YouTube id varsa buraya kısa url de vereceğiz
+            public required string Title { get; set; }      // "Trailer 1" gibi
+            public string? YouTubeId { get; set; }          // opsiyonel
+            public List<MetaData>? MetaDatas { get; set; }  // şimdilik boş
+        }
+
 
         public static MergedGameDto Merge(
             IgdbGameDetail? igdb,
@@ -81,16 +100,16 @@ namespace CommentToGame.Services
         {
             var dto = new MergedGameDto();
 
-            dto.Name         = FirstNonEmpty(igdb?.Name, rawg?.Name);
-            dto.ReleaseDate  = igdb?.ReleaseDate ?? ParseDate(rawg?.Released);
-            dto.Metacritic   = rawg?.Metacritic;
-            dto.GgDbRating   = rawg?.Rating is double r ? (int?)Math.Round(r * 20) : null;
-            dto.MainImage    = FirstNonEmpty(igdb?.BackgroundImage, rawg?.BackgroundImage);
-            dto.Popularity   = rawg?.Added;
+            dto.Name = FirstNonEmpty(igdb?.Name, rawg?.Name);
+            dto.ReleaseDate = igdb?.ReleaseDate ?? ParseDate(rawg?.Released);
+            dto.Metacritic = rawg?.Metacritic;
+            dto.GgDbRating = rawg?.Rating is double r ? (int?)Math.Round(r * 20) : null;
+            dto.MainImage = FirstNonEmpty(igdb?.BackgroundImage, rawg?.BackgroundImage);
+            dto.Popularity = rawg?.Added;
 
-            dto.Developer    = FirstNonEmpty(igdb?.Developers?.FirstOrDefault(), rawg?.Developers?.FirstOrDefault()?.Name);
-            dto.Publisher    = FirstNonEmpty(igdb?.Publishers?.FirstOrDefault(), rawg?.Publishers?.FirstOrDefault()?.Name);
-            dto.About        = FirstNonEmpty(igdb?.Summary, rawg?.DescriptionRaw);
+            dto.Developer = FirstNonEmpty(igdb?.Developers?.FirstOrDefault(), rawg?.Developers?.FirstOrDefault()?.Name);
+            dto.Publisher = FirstNonEmpty(igdb?.Publishers?.FirstOrDefault(), rawg?.Publishers?.FirstOrDefault()?.Name);
+            dto.About = FirstNonEmpty(igdb?.Summary, rawg?.DescriptionRaw);
 
             dto.AgeRatings = (igdb?.AgeRatings ?? Enumerable.Empty<string>()).WhereNotEmpty().Distinct().ToList();
             if (dto.AgeRatings.Count == 0)
@@ -132,10 +151,10 @@ namespace CommentToGame.Services
                     dto.RecRequirement = new RequirementInput { Text = recText };
             }
 
-            dto.AudioLanguages     = (igdb?.AudioLanguages     ?? Enumerable.Empty<string>()).WhereNotEmpty().Distinct().ToList();
-            dto.Subtitles          = (igdb?.Subtitles          ?? Enumerable.Empty<string>()).WhereNotEmpty().Distinct().ToList();
+            dto.AudioLanguages = (igdb?.AudioLanguages ?? Enumerable.Empty<string>()).WhereNotEmpty().Distinct().ToList();
+            dto.Subtitles = (igdb?.Subtitles ?? Enumerable.Empty<string>()).WhereNotEmpty().Distinct().ToList();
             dto.InterfaceLanguages = (igdb?.InterfaceLanguages ?? Enumerable.Empty<string>()).WhereNotEmpty().Distinct().ToList();
-            dto.ContentWarnings    = (igdb?.ContentWarnings    ?? Enumerable.Empty<string>()).WhereNotEmpty().Distinct().ToList();
+            dto.ContentWarnings = (igdb?.ContentWarnings ?? Enumerable.Empty<string>()).WhereNotEmpty().Distinct().ToList();
 
             dto.StoreLinks = storeLinks ?? new List<StoreLink>();
 
@@ -143,31 +162,61 @@ namespace CommentToGame.Services
             {
                 dto.TimeToBeat = new TimeToBeatDto
                 {
-                    Hastily     = ToHours(igdbTtbSeconds.Hastily),
-                    Normally    = ToHours(igdbTtbSeconds.Normally),
-                    Completely  = ToHours(igdbTtbSeconds.Completely)
+                    Hastily = ToHours(igdbTtbSeconds.Hastily),
+                    Normally = ToHours(igdbTtbSeconds.Normally),
+                    Completely = ToHours(igdbTtbSeconds.Completely)
                 };
             }
 
             dto.Engines = (igdb?.Engines ?? Enumerable.Empty<string>()).WhereNotEmpty().Distinct().ToList();
-            dto.Awards  = (igdb?.Awards  ?? Enumerable.Empty<string>()).WhereNotEmpty().Distinct().ToList();
+            dto.Awards = (igdb?.Awards ?? Enumerable.Empty<string>()).WhereNotEmpty().Distinct().ToList();
 
             if (rawgCast != null) dto.Cast = rawgCast.WhereNotEmpty().Distinct().ToList();
             if (rawgCrew != null) dto.Crew = rawgCrew.WhereNotEmpty().Distinct().ToList();
 
-           dto.Screenshots = (igdbScreenshots ?? Enumerable.Empty<string>())
+            // --- IMAGES: Screenshot 1, 2, ... başlıklarıyla doldur
+            var images = (igdbScreenshots ?? Enumerable.Empty<string>())
                 .Where(u => !string.IsNullOrWhiteSpace(u))
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .Take(12)
+                .Select((u, i) => new ImageDto
+                {
+                    Url = u,
+                    Title = $"Screenshot {i + 1}",
+                    MetaDatas = new List<MetaData>() // şimdilik boş
+                })
                 .ToList();
 
-            dto.Trailers = (igdbTrailers ?? Enumerable.Empty<TrailerDto>())
+            // --- VIDEOS: Trailer 1, 2, ...; YouTube id varsa kısa url üret
+            string ToVideoUrl(TrailerDto t)
+            {
+                if (!string.IsNullOrWhiteSpace(t.YouTubeId))
+                    return $"https://youtu.be/{t.YouTubeId}";
+                return t.Url ?? "";
+            }
+
+            var videos = (igdbTrailers ?? Enumerable.Empty<TrailerDto>())
                 .Where(t => !string.IsNullOrWhiteSpace(t?.Url) || !string.IsNullOrWhiteSpace(t?.YouTubeId))
-                .GroupBy(t => string.IsNullOrWhiteSpace(t.YouTubeId) ? ("url:" + t.Url) : ("yt:" + t.YouTubeId),
+                .GroupBy(t => string.IsNullOrWhiteSpace(t!.YouTubeId) ? ("url:" + t!.Url) : ("yt:" + t!.YouTubeId),
                         StringComparer.OrdinalIgnoreCase)
                 .Select(g => g.First())
                 .Take(6)
+                .Select((t, i) => new VideoDto
+                {
+                    Url = ToVideoUrl(t),
+                    YouTubeId = string.IsNullOrWhiteSpace(t.YouTubeId) ? null : t.YouTubeId,
+                    Title = $"Trailer {i + 1}",
+                    MetaDatas = new List<MetaData>() // şimdilik boş
+                })
                 .ToList();
+                
+
+
+            // Yeni alanlara ata
+            dto.Images = images;
+
+            dto.Videos = videos;
+
 
             dto.Createdat = DateTime.Now;
 

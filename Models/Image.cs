@@ -6,7 +6,8 @@ using MongoDB.Bson;
 using MongoDB.Bson.Serialization.Attributes;
 
 namespace CommentToGame.Models;
-public class Media
+
+public class Image
 {
     [BsonId, BsonRepresentation(BsonType.ObjectId)]
     public string Id { get; set; } = default!;
@@ -15,9 +16,8 @@ public class Media
 
     public required string Title { get; set; }
 
-    [BsonRepresentation(BsonType.ObjectId)]
-    public required string GalleryId { get; set; }
+    public List<MetaData>? MetaDatas { get; set; }
 
-    [BsonIgnore]
-    public Gallery? Gallery { get; set; }
+
+
 }

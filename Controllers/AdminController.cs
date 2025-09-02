@@ -24,7 +24,9 @@ public class AdminController : ControllerBase
     private readonly IMongoCollection<Platform> _platforms;
 
     private readonly IMongoCollection<MinRequirement> _minReqs;
-private readonly IMongoCollection<RecRequirement> _recReqs;
+    private readonly IMongoCollection<RecRequirement> _recReqs;
+
+    private readonly IMongoCollection<Gallery> _galleries;
     private readonly IConfiguration _config;
 
     public AdminController(MongoDbService service, IConfiguration config)
@@ -42,6 +44,7 @@ private readonly IMongoCollection<RecRequirement> _recReqs;
         _recReqs = db.GetCollection<RecRequirement>("RecRequirements");
         _users = db.GetCollection<User>(usersCollectionName);
         _config = config ?? throw new ArgumentNullException(nameof(config));
+         _galleries = db.GetCollection<Gallery>("Galleries");
     }
 
     [HttpGet("dashboard")]
@@ -392,9 +395,41 @@ public async Task<ActionResult<GameDetailDto>> GetGameById(string id, Cancellati
         return NotFound(new { message = "Game not found" });
 
     var details = await _details.Find(d => d.GameId == id).FirstOrDefaultAsync(ct);
+    
+    var gallery = await _galleries.Find(g => g.GameId == id).FirstOrDefaultAsync(ct);
+
+    List<ImageDto> imagesDto = new();
+    List<VideoDto> videosDto = new();
+
+    if (gallery?.Images != null)
+{
+    imagesDto = gallery.Images
+        .Where(i => !string.IsNullOrWhiteSpace(i.URL))
+        .Select(i => new ImageDto
+        {
+            Url = i.URL,
+            Title = string.IsNullOrWhiteSpace(i.Title) ? "Screenshot" : i.Title,
+            MetaDatas = i.MetaDatas?.Select(m => new MetaDataDto { Label = m.Label, Value = m.Value }).ToList() ?? new List<MetaDataDto>()
+        })
+        .ToList();
+}
+
+if (gallery?.Videos != null)
+{
+    videosDto = gallery.Videos
+        .Where(v => !string.IsNullOrWhiteSpace(v.URL))
+        .Select(v => new VideoDto
+        {
+            Url = v.URL,
+            Title = string.IsNullOrWhiteSpace(v.Title) ? "Trailer" : v.Title,
+            YouTubeId = null, // DB modelinde yoksa null bırak
+            MetaDatas = v.MetaDatas?.Select(m => new MetaDataDto { Label = m.Label, Value = m.Value }).ToList() ?? new List<MetaDataDto>()
+        })
+        .ToList();
+}
 
     // --- GENRES ---
-    var genreNames = new List<string>();
+        var genreNames = new List<string>();
     if (details?.GenreIds != null && details.GenreIds.Count > 0)
     {
         var genres = await _genres.Find(g => details.GenreIds.Contains(g.Id)).ToListAsync(ct);
@@ -452,8 +487,9 @@ public async Task<ActionResult<GameDetailDto>> GetGameById(string id, Cancellati
         SubtitleLanguages = details?.Subtitles ?? new List<string>(),
         InterfaceLanguages = details?.Interface_Language ?? new List<string>(),
         Soundtrack = game.Soundtrack ?? new List<string>(),
-        Screenshots = details?.Screenshots ?? new List<string>(),
-        Trailers    = details?.Trailers    ?? new List<TrailerDto>(),
+        Images  = imagesDto,
+        Videos  = videosDto,
+        Gallery = new GalleryDto { Images = imagesDto, Videos = videosDto },
 
     StoreLinks = (details?.Store_Links ?? new List<StoreLink>())
     .Select(s => new StoreLinkDto
@@ -515,6 +551,51 @@ public async Task<IActionResult> UpdateGame(string id, [FromBody] GameDetailDto 
     details.Interface_Language = dto.InterfaceLanguages ?? new List<string>();
     details.Screenshots = dto.Screenshots ?? new List<string>();
     details.Trailers    = dto.Trailers    ?? new List<TrailerDto>();
+
+    // ---- Gallery upsert (images/videos) ----
+bool hasIncomingMedia =
+    (dto.Images != null && dto.Images.Count > 0) ||
+    (dto.Videos != null && dto.Videos.Count > 0);
+
+if (hasIncomingMedia)
+{
+    var existingGallery = await _galleries.Find(g => g.GameId == id).FirstOrDefaultAsync(ct)
+                         ?? new Gallery { Id = ObjectId.GenerateNewId().ToString(), GameId = id };
+
+    existingGallery.Images = (dto.Images ?? new List<ImageDto>())
+        .Where(i => !string.IsNullOrWhiteSpace(i.Url))
+        .Select(i => new Image
+        {
+            Id = ObjectId.GenerateNewId().ToString(),
+            URL = i.Url.Trim(),
+            Title = string.IsNullOrWhiteSpace(i.Title) ? "Screenshot" : i.Title.Trim(),
+            MetaDatas = (i.MetaDatas ?? new List<MetaDataDto>())
+                .Select(m => new MetaData { Label = m.Label, Value = m.Value })
+                .ToList()
+        })
+        .ToList();
+
+    existingGallery.Videos = (dto.Videos ?? new List<VideoDto>())
+        .Where(v => !string.IsNullOrWhiteSpace(v.Url))
+        .Select(v => new Video
+        {
+            Id = ObjectId.GenerateNewId().ToString(),
+            URL = v.Url.Trim(),
+            Title = string.IsNullOrWhiteSpace(v.Title) ? "Trailer" : v.Title.Trim(),
+            MetaDatas = (v.MetaDatas ?? new List<MetaDataDto>())
+                .Select(m => new MetaData { Label = m.Label, Value = m.Value })
+                .ToList()
+        })
+        .ToList();
+
+    await _galleries.ReplaceOneAsync(
+        g => g.GameId == id,
+        existingGallery,
+        new ReplaceOptions { IsUpsert = true },
+        ct
+    );
+}
+
 
 
     // ---- System Requirements (Min / Rec) — upsert + Id bağlama ----
