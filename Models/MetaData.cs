@@ -1,18 +1,13 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
 using MongoDB.Bson;
 using MongoDB.Bson.Serialization.Attributes;
 
 namespace CommentToGame.Models;
-
-public class Gallery
-{
+    public class MetaData
+    {
     [BsonId, BsonRepresentation(BsonType.ObjectId)]
     public string Id { get; set; } = default!;
-
-    [BsonRepresentation(BsonType.ObjectId)]
-    public required string GameId { get; set; }
-
-    [BsonIgnore]
-    public Game? Game { get; set; }
-
-    
-}
+    }
