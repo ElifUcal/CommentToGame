@@ -33,6 +33,9 @@ namespace CommentToGame.Services
         Task<(List<string> cast, List<string> crew)> GetCreditsAsync(long gameId, CancellationToken ct = default);
 
         Task<(List<string> screenshots, List<TrailerDto> trailers)> GetMediaAsync(long gameId, CancellationToken ct = default);
+
+        Task<IgdbPagedGames> SearchGamesSmartAsync(string query, int page, int pageSize, CancellationToken ct = default);
+
 }
 
     }

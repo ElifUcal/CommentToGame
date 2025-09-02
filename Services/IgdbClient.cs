@@ -67,27 +67,180 @@ public sealed class IgdbClient : IIgdbClient
     }
 
     public async Task<IgdbPagedGames> SearchGamesAsync(string query, int page, int pageSize, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(query)) query = "";
+        if (page <= 0) page = 1; if (pageSize <= 0) pageSize = 40;
+        var offset = (page - 1) * pageSize;
+        var safe = query.Replace("\"", "\\\"");
+
+        // gamesten alt alanları doğrudan getiriyoruz (cover.image_id, platforms.name, category)
+        var rows = await PostAsync<GameRowSearch>(
+            "games",
+            $"fields id,name,first_release_date,category,cover.image_id,platforms.name; " +
+            $"where name ~ \"{safe}\"* & cate; limit {pageSize}; offset {offset};",
+            ct);
+
+        var items = rows.Select(r =>
+        {
+            string? coverUrl = !string.IsNullOrWhiteSpace(r.cover?.image_id)
+                ? $"https://images.igdb.com/igdb/image/upload/t_cover_big/{r.cover.image_id}.jpg"
+                : null;
+
+            int? year = r.first_release_date.HasValue
+                ? (int?)DateTimeOffset.FromUnixTimeSeconds(r.first_release_date.Value).UtcDateTime.Year
+                : null;
+
+            return new IgdbGameCard
+            {
+                Id = r.id,
+                Name = r.name ?? $"game-{r.id}",
+                Year = year,
+                Cover = coverUrl,
+                Platforms = r.platforms?.Select(p => p.name).Where(n => !string.IsNullOrWhiteSpace(n)).Distinct().ToList() ?? new List<string>(),
+                Category = CatToText(r.category)
+            };
+        }).ToList();
+
+
+
+
+        return new IgdbPagedGames
+        {
+            Results = items,
+            Next = rows.Length < pageSize ? null : "next"
+        };
+    }
+
+public async Task<IgdbPagedGames> SearchGamesSmartAsync(string query, int page, int pageSize, CancellationToken ct = default)
 {
     if (string.IsNullOrWhiteSpace(query)) query = "";
-    if (page <= 0) page = 1; if (pageSize <= 0) pageSize = 40;
+    if (page <= 0) page = 1;
+    if (pageSize <= 0) pageSize = 40;
+
     var offset = (page - 1) * pageSize;
     var safe = query.Replace("\"", "\\\"");
+    var toks = Tokens(query); // token filtre (alakasız “4” gibi eşleşmeleri elemek için)
 
-    // gamesten alt alanları doğrudan getiriyoruz (cover.image_id, platforms.name, category)
-    var rows = await PostAsync<GameRowSearch>(
+    // === PRE-FLIGHT: ana oyunu name ile dene (tam eşleşme)
+    var exactMain = await PostAsync<GameRowSearch>(
         "games",
-        $"fields id,name,first_release_date,category,cover.image_id,platforms.name; " +
-        $"where name ~ \"{safe}\"*; limit {pageSize}; offset {offset};",
+        $@"fields id,name,first_release_date,category,cover.image_id,platforms.name,parent_game,version_parent,slug;
+           where name = ""{safe}"" & category = 0 & parent_game = null & version_parent = null;
+           limit 1;",
         ct);
 
-    var items = rows.Select(r =>
+    // === PRE-FLIGHT 2: slug ile dene (ör. "The Sims 4" -> "the-sims-4")
+    GameRowSearch[] exactMainBySlug = Array.Empty<GameRowSearch>();
+    if (exactMain.Length == 0)
+    {
+        var slug = Slugify(query);
+        exactMainBySlug = await PostAsync<GameRowSearch>(
+            "games",
+            $@"fields id,name,first_release_date,category,cover.image_id,platforms.name,parent_game,version_parent,slug;
+               where slug = ""{slug}"" & category = 0 & parent_game = null & version_parent = null;
+               limit 1;",
+            ct);
+    }
+
+    // === 1) /v4/search: ID’leri topla
+    var searchRows = await PostAsync<SearchRow>(
+        "search",
+        $@"fields name, game;
+           search ""{safe}"";
+           limit {pageSize};
+           offset {offset};",
+        ct);
+
+    var ids = searchRows
+        .Where(s => s.game.HasValue)
+        .Select(s => s.game!.Value)
+        .Distinct()
+        .ToList();
+
+    if (ids.Count == 0)
+        return await SearchGamesAsync(query, page, pageSize, ct); // prefix-where fallback
+
+    // === 2) /v4/games: ana oyun filtresiyle dene
+    var rowsMainOnly = await PostAsync<GameRowSearch>(
+        "games",
+        $@"fields id,name,first_release_date,category,cover.image_id,platforms.name,parent_game,version_parent,slug;
+           where id = ({string.Join(",", ids)}) 
+             & category = 0 
+             & parent_game = null 
+             & version_parent = null;
+           limit {ids.Count};",
+        ct);
+
+    // === 3) /v4/games: tüm sonuçlar (ilgili paket/kit/versiyonlar)
+    var rowsAll = await PostAsync<GameRowSearch>(
+        "games",
+        $@"fields id,name,first_release_date,category,cover.image_id,platforms.name,parent_game,version_parent,slug;
+           where id = ({string.Join(",", ids)});
+           limit {ids.Count};",
+        ct);
+
+    // === 4) Birleştir: pre-flight (name/slug) + ana oyunlar + tüm sonuçlar → ID’ye göre tekilleştir
+    var combined = exactMain
+        .Concat(exactMainBySlug)
+        .Concat(rowsMainOnly)
+        .Concat(rowsAll)
+        .GroupBy(r => r.id)
+        .Select(g => g.First())
+        .ToList();
+
+    // === 5) Token bazlı filtre: tüm anlamlı token’lar isimde geçsin (The Sims 4 → sims & 4)
+    var filtered = combined.Where(r => ContainsAllTokens(r.name, toks)).ToList();
+    if (filtered.Count == 0 && toks.Count > 0)
+        filtered = combined.Where(r => (r.name ?? "").ToLowerInvariant().Contains(toks[0])).ToList();
+    if (filtered.Count == 0)
+        filtered = combined;
+
+    // === 6) Sıralama: tam eşleşme → ana oyun → parent/version null → tarih
+    var ordered = filtered
+        .OrderByDescending(r => string.Equals(r.name, query, StringComparison.OrdinalIgnoreCase)) // tam ad en üst
+        .ThenBy(r => r.category ?? int.MaxValue)                 // 0 (Main Game) öne
+        .ThenBy(r => r.parent_game.HasValue ? 1 : 0)             // parent_game = null öne
+        .ThenBy(r => r.version_parent.HasValue ? 1 : 0)          // version_parent = null öne
+        .ThenBy(r => r.first_release_date ?? long.MaxValue)
+        .ToList();
+
+    // === 7) Map ve dönüş
+    var items = ordered.Select(MapToCard).ToList();
+    var next = searchRows.Length < pageSize ? null : "next";
+
+    return new IgdbPagedGames { Results = items, Next = next };
+
+    // ---- helpers ----
+    static string Slugify(string s) =>
+        Regex.Replace(s.Trim().ToLowerInvariant(), @"[^a-z0-9]+", "-").Trim('-');
+
+    static List<string> Tokens(string s)
+    {
+        var stop = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        { "the", "a", "an", "of", "and" };
+
+        return Regex.Split(s, @"\W+")
+                    .Where(t => !string.IsNullOrWhiteSpace(t))
+                    .Select(t => t.ToLowerInvariant())
+                    .Where(t => !stop.Contains(t))
+                    .ToList();
+    }
+
+    static bool ContainsAllTokens(string? name, List<string> toks)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return false;
+        var lower = name.ToLowerInvariant();
+        return toks.All(t => lower.Contains(t));
+    }
+
+    IgdbGameCard MapToCard(GameRowSearch r)
     {
         string? coverUrl = !string.IsNullOrWhiteSpace(r.cover?.image_id)
             ? $"https://images.igdb.com/igdb/image/upload/t_cover_big/{r.cover.image_id}.jpg"
             : null;
 
         int? year = r.first_release_date.HasValue
-            ? (int?) DateTimeOffset.FromUnixTimeSeconds(r.first_release_date.Value).UtcDateTime.Year
+            ? (int?)DateTimeOffset.FromUnixTimeSeconds(r.first_release_date.Value).UtcDateTime.Year
             : null;
 
         return new IgdbGameCard
@@ -96,17 +249,27 @@ public sealed class IgdbClient : IIgdbClient
             Name = r.name ?? $"game-{r.id}",
             Year = year,
             Cover = coverUrl,
-            Platforms = r.platforms?.Select(p => p.name).Where(n => !string.IsNullOrWhiteSpace(n)).Distinct().ToList() ?? new List<string>(),
+            Platforms = r.platforms?.Select(p => p.name)
+                                   .Where(n => !string.IsNullOrWhiteSpace(n))
+                                   .Distinct()
+                                   .ToList() ?? new List<string>(),
             Category = CatToText(r.category)
         };
-    }).ToList();
-
-    return new IgdbPagedGames
-    {
-        Results = items,
-        Next = rows.Length < pageSize ? null : "next"
-    };
+    }
 }
+
+
+
+
+
+
+
+    // DTO: IGDB /v4/search cevabı için
+    public sealed class SearchRow
+    {
+        public string? name { get; set; }
+        public long? game { get; set; } // games tablosundaki id
+    }
 
 // IGDB category enumunu metne çevir
 private static string? CatToText(long? cat) => cat switch
@@ -137,9 +300,17 @@ private sealed class GameRowSearch
     public long? category { get; set; }
     public CoverObj? cover { get; set; }
     public PlatformObj[]? platforms { get; set; }
+
+    // yeni alanlar:
+    public long? parent_game { get; set; }
+    public long? version_parent { get; set; }
+    public string? slug { get; set; }
+
     public sealed class CoverObj { public string? image_id { get; set; } }
     public sealed class PlatformObj { public string? name { get; set; } }
 }
+
+
 
 
     public async Task<List<StoreLink>> GetStoreLinksAsync(long gameId, CancellationToken ct = default)

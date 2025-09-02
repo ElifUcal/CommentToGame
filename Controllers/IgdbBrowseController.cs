@@ -22,32 +22,31 @@ public async Task<IActionResult> Search(
     [FromQuery] int pageSize = 20,
     [FromQuery] bool dedupe = true,
     [FromQuery] bool details = false,
+    [FromQuery] bool useSearch = false,   // <— EKLENDİ
     CancellationToken ct = default)
 {
     if (string.IsNullOrWhiteSpace(q)) return BadRequest("q gerekli");
     page = Math.Max(1, page);
     pageSize = Math.Clamp(pageSize, 1, 50);
 
-    var data = await _igdb.SearchGamesAsync(q, page, pageSize, ct);
+    var data = useSearch
+        ? await _igdb.SearchGamesSmartAsync(q, page, pageSize, ct) // <— yeni yol
+        : await _igdb.SearchGamesAsync(q, page, pageSize, ct);     // <— eski yol
+
     var items = data.Results.AsEnumerable();
 
     if (dedupe)
     {
-        items = items
-            .GroupBy(x => (x.Name ?? "").Trim(), StringComparer.OrdinalIgnoreCase)
-            .Select(g => g.OrderBy(i => i.Id).First());
+        items = items.GroupBy(x => x.Id).Select(g => g.First());
     }
 
     if (details)
-    {
-        // Tümüyle kart nesnesini döndür
         return Ok(new { items, next = data.Next });
-    }
 
-    // Sadece id+name döndür
     var shaped = items.Select(x => new { x.Id, x.Name });
     return Ok(new { items = shaped, next = data.Next });
 }
+
 
 
         // GET /api/igdb/detail/12345 (DBye yazmaz)
