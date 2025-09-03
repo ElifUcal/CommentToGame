@@ -1,4 +1,5 @@
 using CommentToGame.Data;
+using CommentToGame.Dtos;
 using CommentToGame.DTOs;
 using CommentToGame.Models;
 using Microsoft.AspNetCore.Authorization;
@@ -44,7 +45,7 @@ public class AdminController : ControllerBase
         _recReqs = db.GetCollection<RecRequirement>("RecRequirements");
         _users = db.GetCollection<User>(usersCollectionName);
         _config = config ?? throw new ArgumentNullException(nameof(config));
-         _galleries = db.GetCollection<Gallery>("Galleries");
+        _galleries = db.GetCollection<Gallery>("Galleries");
     }
 
     [HttpGet("dashboard")]
@@ -387,218 +388,218 @@ public class AdminController : ControllerBase
 
 
     [HttpGet("games/{id}")]
-[Authorize(Roles = "Admin")]
-public async Task<ActionResult<GameDetailDto>> GetGameById(string id, CancellationToken ct)
-{
-    var game = await _games.Find(g => g.Id == id).FirstOrDefaultAsync(ct);
-    if (game == null)
-        return NotFound(new { message = "Game not found" });
+    [Authorize(Roles = "Admin")]
+    public async Task<ActionResult<GameDetailDto>> GetGameById(string id, CancellationToken ct)
+    {
+        var game = await _games.Find(g => g.Id == id).FirstOrDefaultAsync(ct);
+        if (game == null)
+            return NotFound(new { message = "Game not found" });
 
-    var details = await _details.Find(d => d.GameId == id).FirstOrDefaultAsync(ct);
-    
-    var gallery = await _galleries.Find(g => g.GameId == id).FirstOrDefaultAsync(ct);
+        var details = await _details.Find(d => d.GameId == id).FirstOrDefaultAsync(ct);
 
-    List<ImageDto> imagesDto = new();
-    List<VideoDto> videosDto = new();
+        var gallery = await _galleries.Find(g => g.GameId == id).FirstOrDefaultAsync(ct);
 
-    if (gallery?.Images != null)
-{
-    imagesDto = gallery.Images
-        .Where(i => !string.IsNullOrWhiteSpace(i.URL))
-        .Select(i => new ImageDto
+        List<ImageDto> imagesDto = new();
+        List<VideoDto> videosDto = new();
+
+        if (gallery?.Images != null)
         {
-            Url = i.URL,
-            Title = string.IsNullOrWhiteSpace(i.Title) ? "Screenshot" : i.Title,
-            MetaDatas = i.MetaDatas?.Select(m => new MetaDataDto { Label = m.Label, Value = m.Value }).ToList() ?? new List<MetaDataDto>()
-        })
-        .ToList();
-}
+            imagesDto = gallery.Images
+                .Where(i => !string.IsNullOrWhiteSpace(i.URL))
+                .Select(i => new ImageDto
+                {
+                    Url = i.URL,
+                    Title = string.IsNullOrWhiteSpace(i.Title) ? "Screenshot" : i.Title,
+                    MetaDatas = i.MetaDatas?.Select(m => new MetaDataDto { Label = m.Label, Value = m.Value }).ToList() ?? new List<MetaDataDto>()
+                })
+                .ToList();
+        }
 
-if (gallery?.Videos != null)
-{
-    videosDto = gallery.Videos
-        .Where(v => !string.IsNullOrWhiteSpace(v.URL))
-        .Select(v => new VideoDto
+        if (gallery?.Videos != null)
         {
-            Url = v.URL,
-            Title = string.IsNullOrWhiteSpace(v.Title) ? "Trailer" : v.Title,
-            YouTubeId = null, // DB modelinde yoksa null bırak
-            MetaDatas = v.MetaDatas?.Select(m => new MetaDataDto { Label = m.Label, Value = m.Value }).ToList() ?? new List<MetaDataDto>()
-        })
-        .ToList();
-}
+            videosDto = gallery.Videos
+                .Where(v => !string.IsNullOrWhiteSpace(v.URL))
+                .Select(v => new VideoDto
+                {
+                    Url = v.URL,
+                    Title = string.IsNullOrWhiteSpace(v.Title) ? "Trailer" : v.Title,
+                    YouTubeId = null, // DB modelinde yoksa null bırak
+                    MetaDatas = v.MetaDatas?.Select(m => new MetaDataDto { Label = m.Label, Value = m.Value }).ToList() ?? new List<MetaDataDto>()
+                })
+                .ToList();
+        }
 
-    // --- GENRES ---
+        // --- GENRES ---
         var genreNames = new List<string>();
-    if (details?.GenreIds != null && details.GenreIds.Count > 0)
-    {
-        var genres = await _genres.Find(g => details.GenreIds.Contains(g.Id)).ToListAsync(ct);
-        genreNames = genres.Select(g => g.Name).ToList(); // Genre modelinde "Name" property olduğunu varsayıyorum
-    }
-
-    // --- PLATFORMS ---
-    var platformNames = new List<string>();
-    if (details?.PlatformIds != null && details.PlatformIds.Count > 0)
-    {
-        var plats = await _platforms.Find(p => details.PlatformIds.Contains(p.Id)).ToListAsync(ct);
-        platformNames = plats.Select(p => p.Name).ToList(); // Platform modelinde "Name" property olduğunu varsayıyorum
-    }
-
-    string? minText = null, recText = null;
-    if (!string.IsNullOrEmpty(details?.MinRequirementId))
-    {
-        var m = await _minReqs.Find(x => x.Id == details.MinRequirementId).FirstOrDefaultAsync(ct);
-        minText = m?.Text;
-    }
-    if (!string.IsNullOrEmpty(details?.RecRequirementId))
-    {
-        var r = await _recReqs.Find(x => x.Id == details.RecRequirementId).FirstOrDefaultAsync(ct);
-        recText = r?.Text;
-    }
-
-
-    var dto = new GameDetailDto
-    {
-        Id = game.Id,
-        Title = game.Game_Name,
-        ReleaseDate = game.Release_Date,
-        Studio = game.Studio,
-        GgdbRating = game.GgDb_Rating,
-        MetacriticRating = game.Metacritic_Rating,
-        Cover = game.Main_image_URL,
-        Video = game.Main_video_URL,
-
-        Developer = details?.Developer,
-        Publisher = details?.Publisher,
-        Genres = genreNames,
-        Platforms = platformNames,
-        Story = details?.Story,
-        Tags = details?.Tags ?? new List<string>(),
-        Dlcs = details?.DLCs ?? new List<string>(),
-        Crew = game.Crew,
-        Awards = details?.Awards,
-        GameEngine = details?.Engines ?? new List<string>(),
-
-        MinRequirements = minText,
-        RecRequirements = recText,
-        ContentWarnings = details?.Content_Warnings ?? new List<string>(),
-        AgeRatings = details?.Age_Ratings ?? new List<string>(),
-        AudioLanguages = details?.Audio_Language ?? new List<string>(),
-        SubtitleLanguages = details?.Subtitles ?? new List<string>(),
-        InterfaceLanguages = details?.Interface_Language ?? new List<string>(),
-        Soundtrack = game.Soundtrack ?? new List<string>(),
-        Images  = imagesDto,
-        Videos  = videosDto,
-        Gallery = new GalleryDto { Images = imagesDto, Videos = videosDto },
-
-    StoreLinks = (details?.Store_Links ?? new List<StoreLink>())
-    .Select(s => new StoreLinkDto
-    {
-        StoreId    = s.StoreId,
-        Store      = s.Store,
-        Slug       = s.Slug,
-        Domain     = s.Domain,
-        Url        = s.Url,
-        ExternalId = s.ExternalId
-    })
-    .ToList()
-    };
-
-    return Ok(dto);
-}
-
-[HttpPut("games/{id}")]
-[Authorize(Roles = "Admin")]
-public async Task<IActionResult> UpdateGame(string id, [FromBody] GameDetailDto dto, CancellationToken ct)
-{
-    if (dto == null || string.IsNullOrWhiteSpace(dto.Title))
-        return BadRequest(new { message = "Invalid payload: 'title' is required." });
-
-    // ---- Game (temel) ----
-    var game = await _games.Find(g => g.Id == id).FirstOrDefaultAsync(ct);
-    if (game == null)
-        return NotFound(new { message = "Game not found" });
-
-    game.Game_Name = dto.Title;
-    game.Release_Date = dto.ReleaseDate;
-    game.Studio = dto.Studio;
-    game.GgDb_Rating = dto.GgdbRating;
-    game.Metacritic_Rating = dto.MetacriticRating;
-    game.Main_image_URL = dto.Cover;
-    game.Main_video_URL = dto.Video;
-    game.Crew = dto.Crew ?? new List<string>();
-    game.Soundtrack = dto.Soundtrack ?? new List<string>();
-
-    await _games.ReplaceOneAsync(g => g.Id == id, game, cancellationToken: ct);
-
-    // ---- Game_Details (detay) ----
-    var details = await _details.Find(d => d.GameId == id).FirstOrDefaultAsync(ct)
-                  ?? new Game_Details { GameId = id };
-
-    details.Developer = dto.Developer;
-    details.Publisher = dto.Publisher;
-    details.Story = dto.Story;
-    details.Tags = dto.Tags ?? new List<string>();
-    details.DLCs = dto.Dlcs ?? new List<string>();
-    details.Awards = dto.Awards;
-    details.Engines = dto.GameEngine ?? new List<string>();
-    
-    details.Content_Warnings = dto.ContentWarnings ?? new List<string>();
-    details.Age_Ratings = dto.AgeRatings ?? new List<string>();
-    
-    details.Audio_Language = dto.AudioLanguages ?? new List<string>();
-    details.Subtitles = dto.SubtitleLanguages ?? new List<string>();
-    details.Interface_Language = dto.InterfaceLanguages ?? new List<string>();
-    details.Screenshots = dto.Screenshots ?? new List<string>();
-    details.Trailers    = dto.Trailers    ?? new List<TrailerDto>();
-
-    // ---- Gallery upsert (images/videos) ----
-bool hasIncomingMedia =
-    (dto.Images != null && dto.Images.Count > 0) ||
-    (dto.Videos != null && dto.Videos.Count > 0);
-
-if (hasIncomingMedia)
-{
-    var existingGallery = await _galleries.Find(g => g.GameId == id).FirstOrDefaultAsync(ct)
-                         ?? new Gallery { Id = ObjectId.GenerateNewId().ToString(), GameId = id };
-
-    existingGallery.Images = (dto.Images ?? new List<ImageDto>())
-        .Where(i => !string.IsNullOrWhiteSpace(i.Url))
-        .Select(i => new Image
+        if (details?.GenreIds != null && details.GenreIds.Count > 0)
         {
-            Id = ObjectId.GenerateNewId().ToString(),
-            URL = i.Url.Trim(),
-            Title = string.IsNullOrWhiteSpace(i.Title) ? "Screenshot" : i.Title.Trim(),
-            MetaDatas = (i.MetaDatas ?? new List<MetaDataDto>())
-                .Select(m => new MetaData { Label = m.Label, Value = m.Value })
-                .ToList()
-        })
-        .ToList();
+            var genres = await _genres.Find(g => details.GenreIds.Contains(g.Id)).ToListAsync(ct);
+            genreNames = genres.Select(g => g.Name).ToList(); // Genre modelinde "Name" property olduğunu varsayıyorum
+        }
 
-    existingGallery.Videos = (dto.Videos ?? new List<VideoDto>())
-        .Where(v => !string.IsNullOrWhiteSpace(v.Url))
-        .Select(v => new Video
+        // --- PLATFORMS ---
+        var platformNames = new List<string>();
+        if (details?.PlatformIds != null && details.PlatformIds.Count > 0)
         {
-            Id = ObjectId.GenerateNewId().ToString(),
-            URL = v.Url.Trim(),
-            Title = string.IsNullOrWhiteSpace(v.Title) ? "Trailer" : v.Title.Trim(),
-            MetaDatas = (v.MetaDatas ?? new List<MetaDataDto>())
-                .Select(m => new MetaData { Label = m.Label, Value = m.Value })
-                .ToList()
+            var plats = await _platforms.Find(p => details.PlatformIds.Contains(p.Id)).ToListAsync(ct);
+            platformNames = plats.Select(p => p.Name).ToList(); // Platform modelinde "Name" property olduğunu varsayıyorum
+        }
+
+        string? minText = null, recText = null;
+        if (!string.IsNullOrEmpty(details?.MinRequirementId))
+        {
+            var m = await _minReqs.Find(x => x.Id == details.MinRequirementId).FirstOrDefaultAsync(ct);
+            minText = m?.Text;
+        }
+        if (!string.IsNullOrEmpty(details?.RecRequirementId))
+        {
+            var r = await _recReqs.Find(x => x.Id == details.RecRequirementId).FirstOrDefaultAsync(ct);
+            recText = r?.Text;
+        }
+
+
+        var dto = new GameDetailDto
+        {
+            Id = game.Id,
+            Title = game.Game_Name,
+            ReleaseDate = game.Release_Date,
+            Studio = game.Studio,
+            GgdbRating = game.GgDb_Rating,
+            MetacriticRating = game.Metacritic_Rating,
+            Cover = game.Main_image_URL,
+            Video = game.Main_video_URL,
+
+            Developer = details?.Developer,
+            Publisher = details?.Publisher,
+            Genres = genreNames,
+            Platforms = platformNames,
+            Story = details?.Story,
+            Tags = details?.Tags ?? new List<string>(),
+            Dlcs = details?.DLCs ?? new List<string>(),
+            Crew = game.Crew,
+            Awards = details?.Awards,
+            GameEngine = details?.Engines ?? new List<string>(),
+
+            MinRequirements = minText,
+            RecRequirements = recText,
+            ContentWarnings = details?.Content_Warnings ?? new List<string>(),
+            AgeRatings = details?.Age_Ratings ?? new List<string>(),
+            AudioLanguages = details?.Audio_Language ?? new List<string>(),
+            SubtitleLanguages = details?.Subtitles ?? new List<string>(),
+            InterfaceLanguages = details?.Interface_Language ?? new List<string>(),
+            Soundtrack = game.Soundtrack ?? new List<string>(),
+            Images = imagesDto,
+            Videos = videosDto,
+            Gallery = new GalleryDto { Images = imagesDto, Videos = videosDto },
+
+            StoreLinks = (details?.Store_Links ?? new List<StoreLink>())
+        .Select(s => new StoreLinkDto
+        {
+            StoreId = s.StoreId,
+            Store = s.Store,
+            Slug = s.Slug,
+            Domain = s.Domain,
+            Url = s.Url,
+            ExternalId = s.ExternalId
         })
-        .ToList();
+        .ToList()
+        };
 
-    await _galleries.ReplaceOneAsync(
-        g => g.GameId == id,
-        existingGallery,
-        new ReplaceOptions { IsUpsert = true },
-        ct
-    );
-}
+        return Ok(dto);
+    }
+
+    [HttpPut("games/{id}")]
+    [Authorize(Roles = "Admin")]
+    public async Task<IActionResult> UpdateGame(string id, [FromBody] GameDetailDto dto, CancellationToken ct)
+    {
+        if (dto == null || string.IsNullOrWhiteSpace(dto.Title))
+            return BadRequest(new { message = "Invalid payload: 'title' is required." });
+
+        // ---- Game (temel) ----
+        var game = await _games.Find(g => g.Id == id).FirstOrDefaultAsync(ct);
+        if (game == null)
+            return NotFound(new { message = "Game not found" });
+
+        game.Game_Name = dto.Title;
+        game.Release_Date = dto.ReleaseDate;
+        game.Studio = dto.Studio;
+        game.GgDb_Rating = dto.GgdbRating;
+        game.Metacritic_Rating = dto.MetacriticRating;
+        game.Main_image_URL = dto.Cover;
+        game.Main_video_URL = dto.Video;
+        game.Crew = dto.Crew ?? new List<string>();
+        game.Soundtrack = dto.Soundtrack ?? new List<string>();
+
+        await _games.ReplaceOneAsync(g => g.Id == id, game, cancellationToken: ct);
+
+        // ---- Game_Details (detay) ----
+        var details = await _details.Find(d => d.GameId == id).FirstOrDefaultAsync(ct)
+                      ?? new Game_Details { GameId = id };
+
+        details.Developer = dto.Developer;
+        details.Publisher = dto.Publisher;
+        details.Story = dto.Story;
+        details.Tags = dto.Tags ?? new List<string>();
+        details.DLCs = dto.Dlcs ?? new List<string>();
+        details.Awards = dto.Awards;
+        details.Engines = dto.GameEngine ?? new List<string>();
+
+        details.Content_Warnings = dto.ContentWarnings ?? new List<string>();
+        details.Age_Ratings = dto.AgeRatings ?? new List<string>();
+
+        details.Audio_Language = dto.AudioLanguages ?? new List<string>();
+        details.Subtitles = dto.SubtitleLanguages ?? new List<string>();
+        details.Interface_Language = dto.InterfaceLanguages ?? new List<string>();
+        details.Screenshots = dto.Screenshots ?? new List<string>();
+        details.Trailers = dto.Trailers ?? new List<TrailerDto>();
+
+        // ---- Gallery upsert (images/videos) ----
+        bool hasIncomingMedia =
+            (dto.Images != null && dto.Images.Count > 0) ||
+            (dto.Videos != null && dto.Videos.Count > 0);
+
+        if (hasIncomingMedia)
+        {
+            var existingGallery = await _galleries.Find(g => g.GameId == id).FirstOrDefaultAsync(ct)
+                                 ?? new Gallery { Id = ObjectId.GenerateNewId().ToString(), GameId = id };
+
+            existingGallery.Images = (dto.Images ?? new List<ImageDto>())
+                .Where(i => !string.IsNullOrWhiteSpace(i.Url))
+                .Select(i => new Image
+                {
+                    Id = ObjectId.GenerateNewId().ToString(),
+                    URL = i.Url.Trim(),
+                    Title = string.IsNullOrWhiteSpace(i.Title) ? "Screenshot" : i.Title.Trim(),
+                    MetaDatas = (i.MetaDatas ?? new List<MetaDataDto>())
+                        .Select(m => new MetaData { Label = m.Label, Value = m.Value })
+                        .ToList()
+                })
+                .ToList();
+
+            existingGallery.Videos = (dto.Videos ?? new List<VideoDto>())
+                .Where(v => !string.IsNullOrWhiteSpace(v.Url))
+                .Select(v => new Video
+                {
+                    Id = ObjectId.GenerateNewId().ToString(),
+                    URL = v.Url.Trim(),
+                    Title = string.IsNullOrWhiteSpace(v.Title) ? "Trailer" : v.Title.Trim(),
+                    MetaDatas = (v.MetaDatas ?? new List<MetaDataDto>())
+                        .Select(m => new MetaData { Label = m.Label, Value = m.Value })
+                        .ToList()
+                })
+                .ToList();
+
+            await _galleries.ReplaceOneAsync(
+                g => g.GameId == id,
+                existingGallery,
+                new ReplaceOptions { IsUpsert = true },
+                ct
+            );
+        }
 
 
 
-    // ---- System Requirements (Min / Rec) — upsert + Id bağlama ----
+        // ---- System Requirements (Min / Rec) — upsert + Id bağlama ----
         // dto.MinRequirements / dto.RecRequirements string (metin) kabul edildiği varsayımıyla
         if (dto.MinRequirements is { Length: > 0 } minText) // null veya whitespace değil
         {
@@ -628,77 +629,95 @@ if (hasIncomingMedia)
             details.MinRequirementId = null;
         }
 
-// REC
-if (dto.RecRequirements is { Length: >0 } recText)
-{
-    if (!string.IsNullOrEmpty(details.RecRequirementId))
-    {
-        var upd = Builders<RecRequirement>.Update.Set(x => x.Text, recText);
-        await _recReqs.UpdateOneAsync(
-            Builders<RecRequirement>.Filter.Eq(x => x.Id, details.RecRequirementId),
-            upd,
-            cancellationToken: ct
-        );
+        // REC
+        if (dto.RecRequirements is { Length: > 0 } recText)
+        {
+            if (!string.IsNullOrEmpty(details.RecRequirementId))
+            {
+                var upd = Builders<RecRequirement>.Update.Set(x => x.Text, recText);
+                await _recReqs.UpdateOneAsync(
+                    Builders<RecRequirement>.Filter.Eq(x => x.Id, details.RecRequirementId),
+                    upd,
+                    cancellationToken: ct
+                );
+            }
+            else
+            {
+                var doc = new RecRequirement { Text = recText };
+                await _recReqs.InsertOneAsync(doc, cancellationToken: ct);
+                details.RecRequirementId = doc.Id;
+            }
+        }
+        else
+        {
+            if (!string.IsNullOrEmpty(details.RecRequirementId))
+            {
+                try { await _recReqs.DeleteOneAsync(x => x.Id == details.RecRequirementId, ct); } catch { /* yoksay */ }
+            }
+            details.RecRequirementId = null;
+        }
+
+        // ---- Genres (isim → id)
+        if (dto.Genres != null)
+        {
+            var genreDocs = await _genres
+                .Find(g => dto.Genres.Contains(g.Name))
+                .Project(g => new { g.Id, g.Name })
+                .ToListAsync(ct);
+
+            details.GenreIds = genreDocs.Select(x => x.Id).ToList();
+        }
+
+        // ---- Platforms (isim → id)
+        if (dto.Platforms != null)
+        {
+            var platformDocs = await _platforms
+                .Find(p => dto.Platforms.Contains(p.Name))
+                .Project(p => new { p.Id, p.Name })
+                .ToListAsync(ct);
+
+            details.PlatformIds = platformDocs.Select(x => x.Id).ToList();
+
+        }
+
+        details.Store_Links = (dto.StoreLinks ?? new List<StoreLinkDto>())
+           .Where(s => !string.IsNullOrWhiteSpace(s.Url))
+           .Select(s => new StoreLink
+           {
+               StoreId = s.StoreId ?? 0,
+               Store = s.Store ?? "",
+               Slug = s.Slug ?? "",
+               Domain = s.Domain ?? "",
+               Url = s.Url ?? "",
+               ExternalId = s.ExternalId
+           })
+           .ToList();
+        await _details.ReplaceOneAsync(d => d.GameId == id, details, new ReplaceOptions { IsUpsert = true }, ct);
+
+        return Ok(new { message = $"Game {id} updated" });
     }
-    else
-    {
-        var doc = new RecRequirement { Text = recText };
-        await _recReqs.InsertOneAsync(doc, cancellationToken: ct);
-        details.RecRequirementId = doc.Id;
-    }
+
+
+        [HttpPut("getUsers")]
+        [Authorize(Roles = "Admin")]
+        public async Task<ActionResult<List<UserDto>>> GetUsers()
+        {
+            // Tüm kullanıcıları getir
+            var users = await _users.Find(_ => true).ToListAsync();
+
+            // DTO’ya map et
+            var userDtos = users.Select(u => new UserDto
+            {
+                UserName = u.UserName,
+                Email = u.Email,
+                Password = string.Empty, // Şifre hash'i API'de dönülmez, boş geçiyoruz
+                Birthdate = u.Birthdate,
+                Country = u.Country,
+                ProfileImageUrl = u.ProfileImageUrl,
+                userType = u.UserType
+            }).ToList();
+
+            return Ok(userDtos);
+        }
+
 }
-else
-{
-    if (!string.IsNullOrEmpty(details.RecRequirementId))
-    {
-        try { await _recReqs.DeleteOneAsync(x => x.Id == details.RecRequirementId, ct); } catch { /* yoksay */ }
-    }
-    details.RecRequirementId = null;
-}
-
-    // ---- Genres (isim → id)
-    if (dto.Genres != null)
-    {
-        var genreDocs = await _genres
-            .Find(g => dto.Genres.Contains(g.Name))
-            .Project(g => new { g.Id, g.Name })
-            .ToListAsync(ct);
-
-        details.GenreIds = genreDocs.Select(x => x.Id).ToList();
-    }
-
-    // ---- Platforms (isim → id)
-    if (dto.Platforms != null)
-    {
-        var platformDocs = await _platforms
-            .Find(p => dto.Platforms.Contains(p.Name))
-            .Project(p => new { p.Id, p.Name })
-            .ToListAsync(ct);
-
-        details.PlatformIds = platformDocs.Select(x => x.Id).ToList();
-        
-    }
-
- details.Store_Links = (dto.StoreLinks ?? new List<StoreLinkDto>())
-    .Where(s => !string.IsNullOrWhiteSpace(s.Url))
-    .Select(s => new StoreLink
-    {
-        StoreId    = s.StoreId ?? 0,
-        Store      = s.Store      ?? "",
-        Slug       = s.Slug       ?? "",
-        Domain     = s.Domain     ?? "",
-        Url        = s.Url        ?? "",
-        ExternalId = s.ExternalId
-    })
-    .ToList();
-    await _details.ReplaceOneAsync(d => d.GameId == id, details, new ReplaceOptions { IsUpsert = true }, ct);
-
-    return Ok(new { message = $"Game {id} updated" });
-}
-
-
-
-}
-
-
-

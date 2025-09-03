@@ -1,3 +1,5 @@
+using CommentToGame.Models;
+
 namespace CommentToGame.Dtos
 {
     public class UserDto
@@ -10,5 +12,7 @@ namespace CommentToGame.Dtos
         public required string Country { get; set; }
 
         public string? ProfileImageUrl { get; set; }
+        public required UserType userType { get; set; }
+        
     }
 }
