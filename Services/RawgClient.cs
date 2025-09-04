@@ -177,7 +177,13 @@ public class RawgClient : IRawgClient
       .ToList();
 }
 
+    public Task<(int Id, string? Name)> ResolveGameAsync(string slugOrId, CancellationToken ct = default)
+    {
+        throw new NotImplementedException();
+    }
 
-
-
+    public Task<(List<string> screenshots, List<TrailerDto> trailers)> GetMediaAsync(int id, CancellationToken ct = default)
+    {
+        throw new NotImplementedException();
+    }
 }

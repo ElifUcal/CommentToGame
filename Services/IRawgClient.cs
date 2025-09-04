@@ -22,6 +22,7 @@ public interface IRawgClient
     // IRawgClient.cs
     Task<List<StoreLink>> GetStoreLinksAsync(int id, CancellationToken ct = default);
 
+    
 
 
 }
