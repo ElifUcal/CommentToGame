@@ -480,6 +480,10 @@ public class AdminController : ControllerBase
             Awards = details?.Awards,
             GameEngine = details?.Engines ?? new List<string>(),
 
+            TimeToBeat_Hastily    = details?.TimeToBeat_Hastily,
+            TimeToBeat_Normally   = details?.TimeToBeat_Normally,
+            TimeToBeat_Completely = details?.TimeToBeat_Completely,
+
             MinRequirements = minText,
             RecRequirements = recText,
             ContentWarnings = details?.Content_Warnings ?? new List<string>(),
@@ -543,6 +547,11 @@ public class AdminController : ControllerBase
         details.DLCs = dto.Dlcs ?? new List<string>();
         details.Awards = dto.Awards;
         details.Engines = dto.GameEngine ?? new List<string>();
+
+        details.TimeToBeat_Hastily    = dto.TimeToBeat_Hastily;
+        details.TimeToBeat_Normally   = dto.TimeToBeat_Normally;
+        details.TimeToBeat_Completely = dto.TimeToBeat_Completely;
+
 
         details.Content_Warnings = dto.ContentWarnings ?? new List<string>();
         details.Age_Ratings = dto.AgeRatings ?? new List<string>();
@@ -698,26 +707,65 @@ public class AdminController : ControllerBase
     }
 
 
-        [HttpPut("getUsers")]
-        [Authorize(Roles = "Admin")]
-        public async Task<ActionResult<List<UserDto>>> GetUsers()
+    [HttpGet("getUsers")]
+    [Authorize(Roles = "Admin")]
+    public async Task<ActionResult<List<UserDto>>> GetUsers()
+    {
+        // Tüm kullanıcıları getir
+        var users = await _users.Find(_ => true).ToListAsync();
+
+        // DTO’ya map et
+        var userDtos = users.Select(u => new UserDto
         {
-            // Tüm kullanıcıları getir
-            var users = await _users.Find(_ => true).ToListAsync();
+            Id = u.Id,
+            UserName = u.UserName,
+            Email = u.Email,
+            Password = string.Empty, // Şifre hash'i API'de dönülmez, boş geçiyoruz
+            Birthdate = u.Birthdate,
+            Country = u.Country,
+            ProfileImageUrl = u.ProfileImageUrl,
+            UserType = u.UserType
+        }).ToList();
 
-            // DTO’ya map et
-            var userDtos = users.Select(u => new UserDto
-            {
-                UserName = u.UserName,
-                Email = u.Email,
-                Password = string.Empty, // Şifre hash'i API'de dönülmez, boş geçiyoruz
-                Birthdate = u.Birthdate,
-                Country = u.Country,
-                ProfileImageUrl = u.ProfileImageUrl,
-                userType = u.UserType
-            }).ToList();
+        return Ok(userDtos);
+    }
+        
 
-            return Ok(userDtos);
-        }
+    [HttpDelete("deleteUser/{id}")]
+    [Authorize(Roles = "Admin")]
+    public async Task<IActionResult> DeleteUser(string id, CancellationToken ct)
+    {
+        var user = await _users.Find(g => g.Id == id).FirstOrDefaultAsync(ct);
+        if (user == null)
+            return NotFound(new { message = "User not found" });
+
+        await _users.DeleteOneAsync(g => g.Id == id, ct);
+        
+
+        return Ok(new { message = $"User {id} deleted" });
+    }
+
+   public sealed class UpdateUserRoleInput
+{
+    public string Role { get; set; } = ""; // "User" | "Admin"
+}
+
+[HttpPatch("{id}/role")]
+public async Task<IActionResult> UpdateUserRole(string id, [FromBody] UpdateUserRoleInput input, CancellationToken ct = default)
+{
+    if (string.IsNullOrWhiteSpace(id))
+        return BadRequest(new { message = "id required" });
+
+    if (!Enum.TryParse<UserType>(input.Role, true, out var ut))
+        return BadRequest(new { message = "Role must be 'User' or 'Admin'." });
+
+    var filter = Builders<User>.Filter.Eq(u => u.Id, id);
+    var update = Builders<User>.Update.Set(u => u.UserType, ut);
+
+    var res = await _users.UpdateOneAsync(filter, update, cancellationToken: ct);
+    if (res.MatchedCount == 0) return NotFound(new { message = "User not found." });
+
+    return Ok(new { ok = true, id, userType = ut.ToString() });
+}
 
 }

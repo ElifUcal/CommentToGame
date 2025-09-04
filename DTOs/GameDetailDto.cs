@@ -41,10 +41,14 @@ public class GameDetailDto
 
     public List<string> Screenshots { get; set; } = new();
     public List<TrailerDto> Trailers { get; set; } = new();
-    
+
     public List<ImageDto>? Images { get; set; }     // root’ta düz liste
-public List<VideoDto>? Videos { get; set; }
-public GalleryDto? Gallery { get; set; }        // opsiyonel, geriye uyumluluk için
+    public List<VideoDto>? Videos { get; set; }
+    public GalleryDto? Gallery { get; set; }        // opsiyonel, geriye uyumluluk için
+
+    public int? TimeToBeat_Hastily { get; set; }
+    public int? TimeToBeat_Normally { get; set; }
+    public int? TimeToBeat_Completely { get; set; }
 
 }
 

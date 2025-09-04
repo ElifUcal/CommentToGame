@@ -176,13 +176,16 @@ public class AuthController : ControllerBase
             if (user == null)
                 return NotFound();
 
-            return Ok(new {
-                userName   = user.UserName,
-                email      = user.Email,
-                role       = user.UserType.ToString(), 
-                userType   = (int)user.UserType,       
-                country    = user.Country,
-                birthdate  = user.Birthdate
+            return Ok(new
+            {
+                userName = user.UserName,
+                email = user.Email,
+                role = user.UserType.ToString(),
+                userType = (int)user.UserType,
+                country = user.Country,
+                birthdate = user.Birthdate,
+                profileImageUrl = user.ProfileImageUrl
+                
             });
         }
 

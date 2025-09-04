@@ -178,7 +178,6 @@ namespace CommentToGame.Services
             var images = (igdbScreenshots ?? Enumerable.Empty<string>())
                 .Where(u => !string.IsNullOrWhiteSpace(u))
                 .Distinct(StringComparer.OrdinalIgnoreCase)
-                .Take(12)
                 .Select((u, i) => new ImageDto
                 {
                     Url = u,
@@ -200,7 +199,6 @@ namespace CommentToGame.Services
                 .GroupBy(t => string.IsNullOrWhiteSpace(t!.YouTubeId) ? ("url:" + t!.Url) : ("yt:" + t!.YouTubeId),
                         StringComparer.OrdinalIgnoreCase)
                 .Select(g => g.First())
-                .Take(6)
                 .Select((t, i) => new VideoDto
                 {
                     Url = ToVideoUrl(t),
@@ -209,6 +207,43 @@ namespace CommentToGame.Services
                     MetaDatas = new List<MetaData>() // şimdilik boş
                 })
                 .ToList();
+
+            var mainImageUrl = dto.MainImage;
+            if (!string.IsNullOrWhiteSpace(mainImageUrl))
+            {
+                var alreadyExists = images.Any(i =>
+                    string.Equals(i.Url, mainImageUrl, StringComparison.OrdinalIgnoreCase));
+
+                if (!alreadyExists)
+                {
+                    images.Insert(0, new ImageDto
+                    {
+                        Url = mainImageUrl,
+                        Title = "Main Image",
+                        MetaDatas = new List<MetaData> {
+                new MetaData { Label = "Type", Value = "Main" }
+            }
+                    });
+                }
+                else
+                {
+                    // Varsa ama sona düşmüşse, başa al ve adını "Main Image" yap
+                    var idx = images.FindIndex(i => string.Equals(i.Url, mainImageUrl, StringComparison.OrdinalIgnoreCase));
+                    if (idx > 0)
+                    {
+                        var main = images[idx];
+                        main.Title = "Main Image";
+                        images.RemoveAt(idx);
+                        images.Insert(0, main);
+                    }
+                    else
+                    {
+                        // zaten 0. sıradaysa sadece başlığını güncelle
+                        images[0].Title = "Main Image";
+                    }
+                }
+            }
+
                 
 
 

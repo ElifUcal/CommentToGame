@@ -10,7 +10,7 @@ namespace CommentToGame.Models;
 public class MetaData
 {
     [BsonId, BsonRepresentation(BsonType.ObjectId)]
-    public string Id { get; set; } = default!;
+    public string? Id { get; set; } = default!;
 
     public string? Label { get; set; }
     

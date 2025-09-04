@@ -41,6 +41,7 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(o =>
 {
+
     o.SwaggerDoc("v1", new OpenApiInfo { Title = "CommentToGame API", Version = "v1" });
     o.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
     {
@@ -61,6 +62,7 @@ builder.Services.AddSwaggerGen(o =>
             Array.Empty<string>()
         }
     });
+    o.CustomSchemaIds(t => (t.FullName ?? t.Name).Replace("+", "."));
 });
 
 // CORS ------------- (BUILD'DEN ÖNCE!)
