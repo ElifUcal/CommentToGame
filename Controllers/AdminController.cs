@@ -188,6 +188,119 @@ public class AdminController : ControllerBase
     }
 
     // ---------- Helpers ----------
+    
+    private static string? ExtractYouTubeId(string? u)
+{
+    if (string.IsNullOrWhiteSpace(u)) return null;
+    try
+    {
+        var url = new Uri(u);
+        var host = url.Host.Replace("www.", "", StringComparison.OrdinalIgnoreCase);
+
+        if (host.Equals("youtu.be", StringComparison.OrdinalIgnoreCase))
+            return url.AbsolutePath.Trim('/');
+
+        if (host.Equals("youtube.com", StringComparison.OrdinalIgnoreCase) ||
+            host.Equals("m.youtube.com", StringComparison.OrdinalIgnoreCase))
+        {
+            if (url.AbsolutePath.Equals("/watch", StringComparison.OrdinalIgnoreCase))
+            {
+                var query = System.Web.HttpUtility.ParseQueryString(url.Query);
+                return query.Get("v");
+            }
+            if (url.AbsolutePath.StartsWith("/shorts/", StringComparison.OrdinalIgnoreCase) ||
+                url.AbsolutePath.StartsWith("/embed/", StringComparison.OrdinalIgnoreCase))
+            {
+                var parts = url.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+                return parts.Length >= 2 ? parts[1] : null;
+            }
+        }
+    }
+    catch { /* ignore */ }
+    return null;
+}
+
+private static ImageDto? ToImageDto(Image? img)
+{
+    if (img == null || string.IsNullOrWhiteSpace(img.URL)) return null;
+    return new ImageDto
+    {
+        Url = img.URL,
+        Title = string.IsNullOrWhiteSpace(img.Title) ? "" : img.Title!,
+        MetaDatas = (img.MetaDatas ?? new List<MetaData>())
+            .Select(m => new MetaDataDto { Label = m.Label, Value = m.Value })
+            .ToList()
+    };
+}
+
+private static VideoDto? ToVideoDto(Video? vid)
+{
+    if (vid == null || string.IsNullOrWhiteSpace(vid.URL)) return null;
+    return new VideoDto
+    {
+        Url = vid.URL,
+        Title = string.IsNullOrWhiteSpace(vid.Title) ? "Trailer" : vid.Title!,
+        YouTubeId = ExtractYouTubeId(vid.URL),
+        MetaDatas = (vid.MetaDatas ?? new List<MetaData>())
+            .Select(m => new MetaDataDto { Label = m.Label, Value = m.Value })
+            .ToList()
+    };
+}
+
+    
+    private static Image MapImageDto(ImageDto dto, Image? existing = null)
+    {
+        var id = existing?.Id ?? ObjectId.GenerateNewId().ToString();
+        return new Image
+        {
+            Id = id,
+            URL = (dto.Url ?? "").Trim(),
+            Title = string.IsNullOrWhiteSpace(dto.Title) ? null : dto.Title.Trim(),
+            MetaDatas = (dto.MetaDatas ?? new List<MetaDataDto>())
+                .Select(m => new MetaData { Label = m.Label, Value = m.Value })
+                .ToList()
+        };
+    }
+
+private static Video MapVideoDto(VideoDto dto, Video? existing = null)
+{
+    var id = existing?.Id ?? ObjectId.GenerateNewId().ToString();
+    return new Video
+    {
+        Id = id,
+        URL = (dto.Url ?? "").Trim(),
+        Title = string.IsNullOrWhiteSpace(dto.Title) ? "Trailer" : dto.Title.Trim(),
+        MetaDatas = (dto.MetaDatas ?? new List<MetaDataDto>())
+            .Select(m => new MetaData { Label = m.Label, Value = m.Value })
+            .ToList()
+    };
+}
+
+    private static Image NormalizeImage(Image src)
+    {
+        return new Image
+        {
+            Id = string.IsNullOrWhiteSpace(src.Id) ? ObjectId.GenerateNewId().ToString() : src.Id,
+            URL = (src.URL ?? "").Trim(),
+            Title = string.IsNullOrWhiteSpace(src.Title) ? null : src.Title.Trim(),
+            MetaDatas = (src.MetaDatas ?? new List<MetaData>())
+                .Select(m => new MetaData { Label = m.Label, Value = m.Value })
+                .ToList()
+        };
+    }
+
+private static Video NormalizeVideo(Video src)
+{
+    return new Video
+    {
+        Id = string.IsNullOrWhiteSpace(src.Id) ? ObjectId.GenerateNewId().ToString() : src.Id,
+        URL = (src.URL ?? "").Trim(),
+        Title = string.IsNullOrWhiteSpace(src.Title) ? null : src.Title.Trim(),
+        MetaDatas = (src.MetaDatas ?? new List<MetaData>())
+            .Select(m => new MetaData { Label = m.Label, Value = m.Value })
+            .ToList()
+    };
+}
 
     private static bool TryParseDay(string s, out DateTime dayUtc)
     {
@@ -372,19 +485,55 @@ public class AdminController : ControllerBase
     }
 
     [HttpDelete("games/{id}")]
-    [Authorize(Roles = "Admin")]
-    public async Task<IActionResult> DeleteGame(string id, CancellationToken ct)
+[Authorize(Roles = "Admin")]
+public async Task<IActionResult> DeleteGame(string id, CancellationToken ct)
+{
+    var game = await _games.Find(g => g.Id == id).FirstOrDefaultAsync(ct);
+    if (game == null)
+        return NotFound(new { message = "Game not found" });
+
+    // 1) Bu oyuna ait detayları al (requirements referanslarını yakalamak için)
+    var details = await _details.Find(d => d.GameId == id).FirstOrDefaultAsync(ct);
+    var minReqId = details?.MinRequirementId;
+    var recReqId = details?.RecRequirementId;
+
+    // 2) Gallery (görseller/videolar) — GameId bazlı tek doküman; yine de DeleteMany güvenli
+    await _galleries.DeleteManyAsync(g => g.GameId == id, ct);
+
+    // 3) Game_Details — hepsini sil
+    await _details.DeleteManyAsync(d => d.GameId == id, ct);
+
+    // 4) Game — ana kayıt
+    await _games.DeleteOneAsync(g => g.Id == id, ct);
+
+    // 5) Requirements: başka oyunda kullanılmıyorsa sil
+    if (!string.IsNullOrWhiteSpace(minReqId))
     {
-        var game = await _games.Find(g => g.Id == id).FirstOrDefaultAsync(ct);
-        if (game == null)
-            return NotFound(new { message = "Game not found" });
-
-        await _games.DeleteOneAsync(g => g.Id == id, ct);
-        await _details.DeleteManyAsync(d => d.GameId == id, ct); // detayları da sil
-                                                                 // gerekiyorsa genres/platforms silmeye gerek yok (onlar ortak kullanılıyor)
-
-        return Ok(new { message = $"Game {id} deleted" });
+        var inUseElsewhere = await _details
+            .Find(d => d.MinRequirementId == minReqId)
+            .Limit(1)
+            .AnyAsync(ct);
+        if (!inUseElsewhere)
+            await _minReqs.DeleteOneAsync(x => x.Id == minReqId, ct);
     }
+
+    if (!string.IsNullOrWhiteSpace(recReqId))
+    {
+        var inUseElsewhere = await _details
+            .Find(d => d.RecRequirementId == recReqId)
+            .Limit(1)
+            .AnyAsync(ct);
+        if (!inUseElsewhere)
+            await _recReqs.DeleteOneAsync(x => x.Id == recReqId, ct);
+    }
+
+    // NOT: Genres/Platforms ortak; burada silmiyoruz.
+    // Eğer "tamamen" temizlik istersen, ayrıca:
+    //  - Yorumlar/incelemeler/trivia gibi diğer koleksiyonların da GameId ile silinmesi,
+    //  - Orphan (hiçbir oyunda kullanılmayan) genre/platform gibi kayıtların periyodik job ile temizlenmesi önerilir.
+
+    return Ok(new { message = $"Game {id} deleted (details, gallery and unused requirements removed)" });
+}
 
 
     [HttpGet("games/{id}")]
@@ -480,8 +629,8 @@ public class AdminController : ControllerBase
             Awards = details?.Awards,
             GameEngine = details?.Engines ?? new List<string>(),
 
-            TimeToBeat_Hastily    = details?.TimeToBeat_Hastily,
-            TimeToBeat_Normally   = details?.TimeToBeat_Normally,
+            TimeToBeat_Hastily = details?.TimeToBeat_Hastily,
+            TimeToBeat_Normally = details?.TimeToBeat_Normally,
             TimeToBeat_Completely = details?.TimeToBeat_Completely,
 
             MinRequirements = minText,
@@ -506,8 +655,24 @@ public class AdminController : ControllerBase
             Url = s.Url,
             ExternalId = s.ExternalId
         })
-        .ToList()
+        .ToList(),
+
+        Featured_Section_Background = ToImageDto(game.Featured_Section_Background),
+        Poster_Image                = ToImageDto(game.Poster_Image),
+        Poster_Video                = ToVideoDto(game.Poster_Video)
         };
+
+        
+
+        // --- CREDITS ---
+        dto.GameDirector = details?.GameDirector ?? "";
+        dto.Writers = details?.ScenarioWriters ?? new List<string>();
+        dto.ArtDirector = details?.ArtDirector ?? "";
+        dto.LeadActors = details?.LeadActors ?? new List<string>();
+        dto.VoiceActors = details?.VoiceActors ?? new List<string>();
+        dto.MusicComposer = details?.MusicComposer ?? "";
+        dto.CinematicsVfxTeam = details?.Cinematics_VfxTeam ?? new List<string>();
+
 
         return Ok(dto);
     }
@@ -534,6 +699,16 @@ public class AdminController : ControllerBase
         game.Crew = dto.Crew ?? new List<string>();
         game.Soundtrack = dto.Soundtrack ?? new List<string>();
 
+      if (dto.Featured_Section_Background != null)
+        game.Featured_Section_Background = MapImageDto(dto.Featured_Section_Background, game.Featured_Section_Background);
+
+    if (dto.Poster_Image != null)
+        game.Poster_Image = MapImageDto(dto.Poster_Image, game.Poster_Image);
+
+    if (dto.Poster_Video != null)
+        game.Poster_Video = MapVideoDto(dto.Poster_Video, game.Poster_Video);
+
+
         await _games.ReplaceOneAsync(g => g.Id == id, game, cancellationToken: ct);
 
         // ---- Game_Details (detay) ----
@@ -547,9 +722,29 @@ public class AdminController : ControllerBase
         details.DLCs = dto.Dlcs ?? new List<string>();
         details.Awards = dto.Awards;
         details.Engines = dto.GameEngine ?? new List<string>();
+        
+                // ---- Credits ----
+        // ---- Credits (patch tarzı) ----
+if (dto.GameDirector != null)        details.GameDirector        = NormStr(dto.GameDirector);
+if (dto.Writers != null)             details.ScenarioWriters     = NormList(dto.Writers);
+if (dto.ArtDirector != null)         details.ArtDirector         = NormStr(dto.ArtDirector);
+if (dto.LeadActors != null)          details.LeadActors          = NormList(dto.LeadActors);
+if (dto.VoiceActors != null)         details.VoiceActors         = NormList(dto.VoiceActors);
+if (dto.MusicComposer != null)       details.MusicComposer       = NormStr(dto.MusicComposer);
+if (dto.CinematicsVfxTeam != null)   details.Cinematics_VfxTeam  = NormList(dto.CinematicsVfxTeam);
 
-        details.TimeToBeat_Hastily    = dto.TimeToBeat_Hastily;
-        details.TimeToBeat_Normally   = dto.TimeToBeat_Normally;
+        // (opsiyonel) replace öncesi null-safe garanti
+        details.GameDirector       ??= "";
+        details.ScenarioWriters    ??= new List<string>();
+        details.ArtDirector        ??= "";
+        details.LeadActors         ??= new List<string>();
+        details.VoiceActors        ??= new List<string>();
+        details.MusicComposer      ??= "";
+        details.Cinematics_VfxTeam ??= new List<string>();
+
+
+        details.TimeToBeat_Hastily = dto.TimeToBeat_Hastily;
+        details.TimeToBeat_Normally = dto.TimeToBeat_Normally;
         details.TimeToBeat_Completely = dto.TimeToBeat_Completely;
 
 
@@ -561,6 +756,7 @@ public class AdminController : ControllerBase
         details.Interface_Language = dto.InterfaceLanguages ?? new List<string>();
         details.Screenshots = dto.Screenshots ?? new List<string>();
         details.Trailers = dto.Trailers ?? new List<TrailerDto>();
+        
 
         // ---- Gallery upsert (images/videos) ----
         bool hasIncomingMedia =
@@ -729,7 +925,7 @@ public class AdminController : ControllerBase
 
         return Ok(userDtos);
     }
-        
+
 
     [HttpDelete("deleteUser/{id}")]
     [Authorize(Roles = "Admin")]
@@ -740,32 +936,55 @@ public class AdminController : ControllerBase
             return NotFound(new { message = "User not found" });
 
         await _users.DeleteOneAsync(g => g.Id == id, ct);
-        
+
 
         return Ok(new { message = $"User {id} deleted" });
     }
 
-   public sealed class UpdateUserRoleInput
-{
-    public string Role { get; set; } = ""; // "User" | "Admin"
-}
+    public sealed class UpdateUserRoleInput
+    {
+        public string Role { get; set; } = ""; // "User" | "Admin"
+    }
 
-[HttpPatch("{id}/role")]
-public async Task<IActionResult> UpdateUserRole(string id, [FromBody] UpdateUserRoleInput input, CancellationToken ct = default)
-{
-    if (string.IsNullOrWhiteSpace(id))
-        return BadRequest(new { message = "id required" });
+    [HttpPatch("{id}/role")]
+    public async Task<IActionResult> UpdateUserRole(string id, [FromBody] UpdateUserRoleInput input, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(id))
+            return BadRequest(new { message = "id required" });
 
-    if (!Enum.TryParse<UserType>(input.Role, true, out var ut))
-        return BadRequest(new { message = "Role must be 'User' or 'Admin'." });
+        if (!Enum.TryParse<UserType>(input.Role, true, out var ut))
+            return BadRequest(new { message = "Role must be 'User' or 'Admin'." });
 
-    var filter = Builders<User>.Filter.Eq(u => u.Id, id);
-    var update = Builders<User>.Update.Set(u => u.UserType, ut);
+        var filter = Builders<User>.Filter.Eq(u => u.Id, id);
+        var update = Builders<User>.Update.Set(u => u.UserType, ut);
 
-    var res = await _users.UpdateOneAsync(filter, update, cancellationToken: ct);
-    if (res.MatchedCount == 0) return NotFound(new { message = "User not found." });
+        var res = await _users.UpdateOneAsync(filter, update, cancellationToken: ct);
+        if (res.MatchedCount == 0) return NotFound(new { message = "User not found." });
 
-    return Ok(new { ok = true, id, userType = ut.ToString() });
-}
+        return Ok(new { ok = true, id, userType = ut.ToString() });
+    }
+
+
+
+private static string NormStr(string? s)
+    => string.IsNullOrWhiteSpace(s) ? "" : s.Trim();
+
+private static List<string> NormList(IEnumerable<string>? xs)
+    => xs?.Where(x => !string.IsNullOrWhiteSpace(x))
+          .Select(x => x.Trim())
+          .Distinct(StringComparer.OrdinalIgnoreCase)
+          .ToList()
+       ?? new List<string>();
+
+
+private static List<string> ParseCsv(string? s)
+    => string.IsNullOrWhiteSpace(s)
+       ? new List<string>()
+       : s.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+          .Where(x => !string.IsNullOrWhiteSpace(x))
+          .Select(x => x.Trim())
+          .Distinct(StringComparer.OrdinalIgnoreCase)
+          .ToList();
+
 
 }

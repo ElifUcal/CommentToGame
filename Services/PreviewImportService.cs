@@ -20,7 +20,7 @@ public class PreviewImportService
     private readonly IMongoCollection<MinRequirement> _minReqs;
     private readonly IMongoCollection<RecRequirement> _recReqs;
 
-    private readonly IMongoCollection<Gallery>? _galleries; // opsiyonel
+    private readonly IMongoCollection<Gallery> _galleries;
 
     public PreviewImportService(MongoDbService svc)
     {
@@ -32,7 +32,7 @@ public class PreviewImportService
         _minReqs   = db.GetCollection<MinRequirement>("MinRequirements");
         _recReqs   = db.GetCollection<RecRequirement>("RecRequirements");
 
-        try { _galleries = db.GetCollection<Gallery>("Galleries"); } catch { /* optional */ }
+        _galleries = db.GetCollection<Gallery>("Galleries"); 
     }
 
     public async Task<List<string>> UpsertManyAsync(IEnumerable<GameMerge.MergedGameDto> list, CancellationToken ct = default)
@@ -130,8 +130,18 @@ public class PreviewImportService
             ub.Set(x => x.DLCs, dto.Dlcs ?? new List<string>()),
             ub.SetOnInsert(x => x.GameId, game.Id),
             ub.SetOnInsert(x => x.Id, ObjectId.GenerateNewId().ToString()),
+
+
+            ub.SetOnInsert(x => x.GameDirector,            ""),                 // string → ""
+            ub.SetOnInsert(x => x.ScenarioWriters,         new List<string>()), // list → []
+            ub.SetOnInsert(x => x.ArtDirector,             ""),
+            ub.SetOnInsert(x => x.LeadActors,              new List<string>()),
+            ub.SetOnInsert(x => x.VoiceActors,             new List<string>()),
+            ub.SetOnInsert(x => x.MusicComposer,           ""),
+            ub.SetOnInsert(x => x.Cinematics_VfxTeam,      new List<string>()),
             
         };
+        
 
         if (dto.Awards is { Count: > 0 })
             updates.Add(ub.Set(x => x.Awards, dto.Awards.Distinct().ToList()));
@@ -193,10 +203,10 @@ if (!string.IsNullOrWhiteSpace(mainUrl))
     if (existedIdx >= 0)
     {
         // Varsa: başa taşı ve adını "Main Image" yap
-        var mainImg = imageDocs[existedIdx];
-        mainImg.Title = "Main Image";
+        var existingMain = imageDocs[existedIdx];   // <- isim değişti
+        existingMain.Title = "Main Image";
         imageDocs.RemoveAt(existedIdx);
-        imageDocs.Insert(0, mainImg);
+        imageDocs.Insert(0, existingMain);  
     }
     else
     {
@@ -265,12 +275,78 @@ var galUpdate = Builders<Gallery>.Update
 galUpdate = galUpdate.Set(g => g.Images, imageDocs);
 galUpdate = galUpdate.Set(g => g.Videos, videoDocs);
 
-await _galleries.UpdateOneAsync(
-    galFilter,
-    galUpdate,
-    new UpdateOptions { IsUpsert = true },
-    ct
-);
+        await _galleries.UpdateOneAsync(
+            galFilter,
+            galUpdate,
+            new UpdateOptions { IsUpsert = true },
+            ct
+        );
+
+
+    var mainImg = imageDocs
+    .FirstOrDefault(i => string.Equals(i.Title, "Main Image", StringComparison.OrdinalIgnoreCase))
+    ?? imageDocs.FirstOrDefault();
+
+// 2) "Screenshot 1" görselini bul; yoksa main olmayan ilk görsel; o da yoksa main
+var ss1Img = imageDocs.FirstOrDefault(i =>
+                    !string.IsNullOrEmpty(i.Title) &&
+                    i.Title.StartsWith("Screenshot 1", StringComparison.OrdinalIgnoreCase))
+            ?? imageDocs.FirstOrDefault(i => mainImg == null
+                                             || !string.Equals(i.URL, mainImg.URL, StringComparison.OrdinalIgnoreCase))
+            ?? mainImg;
+
+// 3) Video: "Trailer 1" yoksa ilk video
+var tr1Vid = videoDocs.FirstOrDefault(v =>
+                 string.Equals(v.Title, "Trailer 1", StringComparison.OrdinalIgnoreCase))
+            ?? videoDocs.FirstOrDefault();
+
+// 4) Mevcut Game dokümanında bu alanlar zaten dolu mu, bak
+var existingLite = await _games.Find(g => g.Id == game.Id)
+    .Project(g => new { g.Featured_Section_Background, g.Poster_Image, g.Poster_Video })
+    .FirstOrDefaultAsync(ct);
+
+// 5) Sadece boş olanları doldur (kullanıcı sonradan değiştirirse import tekrarında ezmeyelim)
+var gub = Builders<Game>.Update;
+var gsets = new List<UpdateDefinition<Game>>();
+
+// === YENİ MANTIK ===
+// Featured = Screenshot 1 (fallback: mainImg)
+if (existingLite?.Featured_Section_Background == null && ss1Img != null)
+{
+    gsets.Add(gub.Set(x => x.Featured_Section_Background, new Image {
+        Id = ObjectId.GenerateNewId().ToString(),
+        URL = ss1Img.URL,
+        Title = ss1Img.Title,
+        MetaDatas = ss1Img.MetaDatas
+    }));
+}
+
+// Poster = Main Image (fallback: ss1Img)
+if (existingLite?.Poster_Image == null && mainImg != null)
+{
+    gsets.Add(gub.Set(x => x.Poster_Image, new Image {
+        Id = ObjectId.GenerateNewId().ToString(),
+        URL = mainImg.URL,
+        Title = mainImg.Title,
+        MetaDatas = mainImg.MetaDatas
+    }));
+}
+
+// Poster video = Trailer 1 (fallback: ilk video)
+if (existingLite?.Poster_Video == null && tr1Vid != null)
+{
+    gsets.Add(gub.Set(x => x.Poster_Video, new Video {
+        Id = ObjectId.GenerateNewId().ToString(),
+        URL = tr1Vid.URL,
+        Title = tr1Vid.Title,
+        MetaDatas = tr1Vid.MetaDatas
+    }));
+}
+
+if (gsets.Count > 0)
+{
+    await _games.UpdateOneAsync(g => g.Id == game.Id, gub.Combine(gsets), cancellationToken: ct);
+}
 
 
 
@@ -283,7 +359,7 @@ await _galleries.UpdateOneAsync(
 
         await _details.UpdateOneAsync(detFilter, ub.Combine(updates), new UpdateOptions { IsUpsert = true }, ct);
 
-        // ---------- 5) Gallery ----------
+        
         
 
         return game.Id;

@@ -42,7 +42,7 @@ namespace CommentToGame.Services
             public List<string> Tags { get; set; } = new();
             public List<string> Genres { get; set; } = new();
             public List<string> Platforms { get; set; } = new();
-            
+
 
             // ARTIK obje bekliyoruz (id ve/veya text)
             public RequirementInput? MinRequirement { get; set; }
@@ -65,9 +65,23 @@ namespace CommentToGame.Services
 
             public List<string> Screenshots { get; set; } = new();
             public List<TrailerDto> Trailers { get; set; } = new();
-            
-             public List<ImageDto> Images { get; set; } = new();
+
+            public List<ImageDto> Images { get; set; } = new();
             public List<VideoDto> Videos { get; set; } = new();
+
+            public string? GameDirector { get; set; }
+            public List<string>? Writers { get; set; }
+            public string? ArtDirector { get; set; }
+            public List<string>? LeadActors { get; set; }
+            public List<string>? VoiceActors { get; set; }
+            public string? MusicComposer { get; set; }
+            public List<string>? CinematicsVfxTeam { get; set; }
+
+            public ImageDto? FeaturedSectionBackground { get; set; } // = Main Image
+            public ImageDto? PosterImage { get; set; }                // = Screenshot 1
+            public VideoDto? PosterVideo { get; set; }                // = Trailer 1
+            
+            
         }
 
         public sealed class ImageDto
@@ -251,6 +265,59 @@ namespace CommentToGame.Services
             dto.Images = images;
 
             dto.Videos = videos;
+
+            dto.GameDirector      ??= "";
+            dto.Writers          ??= new();
+            dto.ArtDirector      ??= "";
+            dto.LeadActors       ??= new();
+            dto.VoiceActors      ??= new();
+            dto.MusicComposer    ??= "";
+            dto.CinematicsVfxTeam??= new();
+
+
+        
+
+      // --- POSTER & FEATURED eşleştirmesi (İSTENEN: Poster = Main Image, Featured = Screenshot 1) ---
+
+// 0) Mevcut "Main Image" (ekleme kısmında zaten 0. sıraya yerleştiriyoruz ve başlığı "Main Image")
+var mainImgDto =
+    images.FirstOrDefault(i => string.Equals(i.Title, "Main Image", StringComparison.OrdinalIgnoreCase))
+    // (ekstra emniyet) başlık bulunamazsa URL ile yakalamayı dene
+    ?? (string.IsNullOrWhiteSpace(mainImageUrl)
+        ? null
+        : images.FirstOrDefault(i => string.Equals(i.Url, mainImageUrl, StringComparison.OrdinalIgnoreCase)))
+    // yine de yoksa ilk görsel
+    ?? images.FirstOrDefault();
+
+// 1) "Screenshot 1" görseli
+var ss1Dto = images.FirstOrDefault(i =>
+    !string.IsNullOrWhiteSpace(i.Title) &&
+    i.Title.StartsWith("Screenshot 1", StringComparison.OrdinalIgnoreCase));
+
+// 1.a) Screenshot 1 yoksa → main olmayan ilk görsel (varsa)
+if (ss1Dto == null)
+{
+    ss1Dto = images.FirstOrDefault(i => !object.ReferenceEquals(i, mainImgDto))
+             ?? images.Skip(mainImgDto != null ? 1 : 0).FirstOrDefault();
+}
+
+// === Nihai atamalar ===
+// Poster = Main Image
+dto.PosterImage = mainImgDto ?? ss1Dto; // hiçbir şey yoksa ss1’e düş
+
+// Featured = Screenshot 1 (yoksa main olmayan ilk; o da yoksa main)
+dto.FeaturedSectionBackground = ss1Dto ?? mainImgDto ?? images.FirstOrDefault();
+
+// Video tara: "Trailer 1" → yoksa ilk video
+var tr1Dto = videos.FirstOrDefault(v =>
+    string.Equals(v.Title, "Trailer 1", StringComparison.OrdinalIgnoreCase))
+    ?? videos.FirstOrDefault();
+
+dto.PosterVideo = tr1Dto;
+
+
+
+
 
 
             dto.Createdat = DateTime.Now;

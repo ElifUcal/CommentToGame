@@ -1,3 +1,5 @@
+using CommentToGame.Models;
+
 namespace CommentToGame.DTOs;
 
 public class GameDetailDto
@@ -49,6 +51,18 @@ public class GameDetailDto
     public int? TimeToBeat_Hastily { get; set; }
     public int? TimeToBeat_Normally { get; set; }
     public int? TimeToBeat_Completely { get; set; }
+
+    public string? GameDirector { get; set; }
+    public List<string>? Writers { get; set; }           // ScenarioWriters
+    public string? ArtDirector { get; set; }
+    public List<string>? LeadActors { get; set; }
+    public List<string>? VoiceActors { get; set; }
+    public string? MusicComposer { get; set; }
+    public List<string>? CinematicsVfxTeam { get; set; }
+
+    public ImageDto? Featured_Section_Background { get; set; }
+   public ImageDto? Poster_Image { get; set; }
+   public VideoDto? Poster_Video { get; set; }
 
 }
 

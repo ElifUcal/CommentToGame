@@ -65,10 +65,23 @@ public class Game_Details
     public List<StoreLink> Store_Links { get; set; } = new();
 
     public List<string> Engines { get; set; } = new();
-    
-    public List<string>    Screenshots { get; set; } = new();
-    public List<TrailerDto> Trailers   { get; set; } = new();
 
+    public List<string> Screenshots { get; set; } = new();
+    public List<TrailerDto> Trailers { get; set; } = new();
+
+    public string? GameDirector { get; set; }
+
+    public List<string>? ScenarioWriters { get; set; }
+
+    public string? ArtDirector { get; set; }
+
+    public List<string>? LeadActors { get; set; }
+
+    public List<string>? VoiceActors { get; set; }
+    
+    public string? MusicComposer { get; set; }
+
+    public List<string>? Cinematics_VfxTeam { get; set; }
 
 
 }

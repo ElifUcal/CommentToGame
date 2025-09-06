@@ -37,4 +37,12 @@ public class Game
 
     [BsonElement("createdat")]
     public required DateTime Createdat { get; set; } = DateTime.Now;
+
+    public Image? Featured_Section_Background { get; set; }
+
+    public Image? Poster_Image { get; set; }
+
+    public Video? Poster_Video { get; set;}
+
+    
 }
