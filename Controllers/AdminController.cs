@@ -5,11 +5,9 @@ using CommentToGame.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using MongoDB.Bson;
-using MongoDB.Bson.Serialization;
-using MongoDB.Bson.Serialization.Attributes;
 using MongoDB.Driver;
 using System.Globalization;
-using System.Text.Json;
+using CommentToGame.Services;  // ISystemLogger
 
 namespace CommentToGame.Controllers;
 
@@ -21,19 +19,17 @@ public class AdminController : ControllerBase
     private readonly IMongoCollection<Game> _games;
     private readonly IMongoCollection<Game_Details> _details;
     private readonly IMongoCollection<Genre> _genres;
-
     private readonly IMongoCollection<Platform> _platforms;
-
     private readonly IMongoCollection<MinRequirement> _minReqs;
     private readonly IMongoCollection<RecRequirement> _recReqs;
-
     private readonly IMongoCollection<Gallery> _galleries;
     private readonly IConfiguration _config;
+    private readonly ISystemLogger _logger;
 
-    public AdminController(MongoDbService service, IConfiguration config)
+    public AdminController(MongoDbService service, IConfiguration config, ISystemLogger logger)
     {
         var db = service?.Database
-                ?? throw new InvalidOperationException("MongoDbService.database is null.");
+            ?? throw new InvalidOperationException("MongoDbService.database is null.");
 
         var usersCollectionName = config["MongoDb:UsersCollection"] ?? "User";
 
@@ -44,13 +40,21 @@ public class AdminController : ControllerBase
         _minReqs = db.GetCollection<MinRequirement>("MinRequirements");
         _recReqs = db.GetCollection<RecRequirement>("RecRequirements");
         _users = db.GetCollection<User>(usersCollectionName);
-        _config = config ?? throw new ArgumentNullException(nameof(config));
         _galleries = db.GetCollection<Gallery>("Galleries");
+
+        _config = config ?? throw new ArgumentNullException(nameof(config));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
+
+    // ---------------- Dashboard / Raporlar ----------------
 
     [HttpGet("dashboard")]
     [Authorize(Roles = "Admin")]
-    public IActionResult Dashboard() => Ok("Admin panel verisi 🔐");
+    public IActionResult Dashboard()
+    {
+        _ = _logger.InfoAsync(SystemLogCategory.System, "Admin dashboard viewed", User?.Identity?.Name ?? "unknown");
+        return Ok("Admin panel verisi 🔐");
+    }
 
     [HttpGet("usergamecount")]
     [Authorize] // istersen Roles="Admin"
@@ -58,28 +62,25 @@ public class AdminController : ControllerBase
     {
         if (windowDays <= 0) windowDays = 7;
 
-        // 1) Toplamlar
         var totalUsers = await _users.CountDocumentsAsync(FilterDefinition<User>.Empty, cancellationToken: ct);
         var totalGames = await _games.CountDocumentsAsync(FilterDefinition<Game>.Empty, cancellationToken: ct);
 
-        // 2) Tarih pencereleri (UTC gün)
         var todayUtc = DateTime.UtcNow.Date;
-        var currEnd = todayUtc.AddDays(1);                 // [currStart, currEnd)
+        var currEnd = todayUtc.AddDays(1);          // [currStart, currEnd)
         var currStart = currEnd.AddDays(-windowDays);
-
-        var prevEnd = currStart;                           // [prevStart, prevEnd)
+        var prevEnd = currStart;                    // [prevStart, prevEnd)
         var prevStart = prevEnd.AddDays(-windowDays);
 
-        // 3) Sayımlar
         var (uCurr, uPrev) = await CountWindowPairAsync(_users, currStart, currEnd, prevStart, prevEnd, ct);
         var (gCurr, gPrev) = await CountWindowPairAsync(_games, currStart, currEnd, prevStart, prevEnd, ct);
 
-        // 4) Yüzde fark
         static double DeltaPct(long curr, long prev)
             => prev <= 0 ? (curr > 0 ? 100d : 0d) : ((curr - prev) * 100.0 / prev);
 
         var usersDelta = DeltaPct(uCurr, uPrev);
         var gamesDelta = DeltaPct(gCurr, gPrev);
+
+        _ = _logger.InfoAsync(SystemLogCategory.System, $"UserGameCount queried (windowDays={windowDays})", User?.Identity?.Name ?? "unknown");
 
         return Ok(new
         {
@@ -91,78 +92,23 @@ public class AdminController : ControllerBase
         });
     }
 
-    // ---------- yardımcılar ----------
-
-    // Belgedeki "oluşturulma" tarihi için coalesce: Createdat > CreatedAt > CreatedDate > createdAt > ObjectId timestamp
-    private static BsonDocument CoalesceCreatedExpr() =>
-        new BsonDocument("$ifNull", new BsonArray {
-        "$Createdat",
-        new BsonDocument("$ifNull", new BsonArray {
-            "$CreatedAt",
-            new BsonDocument("$ifNull", new BsonArray {
-                "$CreatedDate",
-                new BsonDocument("$ifNull", new BsonArray {
-                    "$createdAt",
-                    new BsonDocument("$toDate", "$_id")
-                })
-            })
-        })
-        });
-
-    private static async Task<long> CountInRangeAsync<TDoc>(IMongoCollection<TDoc> col, DateTime startInc, DateTime endExc, CancellationToken ct)
-    {
-        var createdExpr = CoalesceCreatedExpr();
-
-        var pipeline = new List<BsonDocument>
-    {
-        new BsonDocument("$addFields", new BsonDocument("_created", createdExpr)),
-        new BsonDocument("$match", new BsonDocument("_created", new BsonDocument {
-            { "$gte", startInc }, { "$lt", endExc }
-        })),
-        new BsonDocument("$count", "c")
-    };
-
-        var list = await col.Database.GetCollection<BsonDocument>(col.CollectionNamespace.CollectionName)
-            .Aggregate<BsonDocument>(pipeline, cancellationToken: ct)
-            .ToListAsync(ct);
-
-        return list.Count > 0 ? list[0].GetValue("c", 0).ToInt64() : 0L;
-    }
-
-    private static async Task<(long curr, long prev)> CountWindowPairAsync<TDoc>(
-        IMongoCollection<TDoc> col,
-        DateTime currStart, DateTime currEnd,
-        DateTime prevStart, DateTime prevEnd,
-        CancellationToken ct)
-    {
-        var curr = await CountInRangeAsync(col, currStart, currEnd, ct);
-        var prev = await CountInRangeAsync(col, prevStart, prevEnd, ct);
-        return (curr, prev);
-    }
-
-    // ====== YENİ: /api/admin/growth ======
     /// <summary>
     /// GET /api/admin/growth?from=2025-08-01&to=2025-08-25&mode=daily|cumulative
     /// Dönüş: [{ date: 'yyyy-MM-dd', users: n, games: n }]
     /// </summary>
     [HttpGet("growth")]
-    [Authorize] // istersen Roles="Admin" yapabilirsin
+    [Authorize] // istersen Roles="Admin"
     public async Task<IActionResult> Growth([FromQuery] string from, [FromQuery] string to, [FromQuery] string? mode = "cumulative", CancellationToken ct = default)
     {
         if (!TryParseDay(from, out var fromDay) || !TryParseDay(to, out var toDay))
             return BadRequest(new { message = "from/to 'yyyy-MM-dd' formatında olmalı." });
 
-        // aralık: [from 00:00, to 23:59:59.999] → toExclusive = to + 1 gün
         var start = fromDay.Date;
         var endExclusive = toDay.Date.AddDays(1);
 
-        // Users için günlük sayım
         var usersDaily = await AggregateDailyCountsAsync(_users, start, endExclusive, ct);
-
-        // Games için günlük sayım
         var gamesDaily = await AggregateDailyCountsAsync(_games, start, endExclusive, ct);
 
-        // Gün listesini doldur & birleştir
         var allDays = EnumerateDays(start, endExclusive.AddDays(-1)).Select(d => d.ToString("yyyy-MM-dd")).ToList();
         var mapU = usersDaily.ToDictionary(x => x.day, x => x.count);
         var mapG = gamesDaily.ToDictionary(x => x.day, x => x.count);
@@ -175,7 +121,6 @@ public class AdminController : ControllerBase
             list.Add((d, u, g));
         }
 
-        // Mode: daily or cumulative
         var modeNorm = (mode ?? "cumulative").Trim().ToLowerInvariant();
         if (modeNorm == "cumulative")
         {
@@ -183,208 +128,13 @@ public class AdminController : ControllerBase
             list = list.Select(x => { cu += x.u; cg += x.g; return (x.day, cu, cg); }).ToList();
         }
 
+        _ = _logger.InfoAsync(SystemLogCategory.System, $"Growth requested from={from} to={to} mode={modeNorm}", User?.Identity?.Name ?? "unknown");
+
         var payload = list.Select(x => new { date = x.day, users = x.u, games = x.g }).ToList();
         return Ok(payload);
     }
 
-    // ---------- Helpers ----------
-    
-    private static string? ExtractYouTubeId(string? u)
-{
-    if (string.IsNullOrWhiteSpace(u)) return null;
-    try
-    {
-        var url = new Uri(u);
-        var host = url.Host.Replace("www.", "", StringComparison.OrdinalIgnoreCase);
-
-        if (host.Equals("youtu.be", StringComparison.OrdinalIgnoreCase))
-            return url.AbsolutePath.Trim('/');
-
-        if (host.Equals("youtube.com", StringComparison.OrdinalIgnoreCase) ||
-            host.Equals("m.youtube.com", StringComparison.OrdinalIgnoreCase))
-        {
-            if (url.AbsolutePath.Equals("/watch", StringComparison.OrdinalIgnoreCase))
-            {
-                var query = System.Web.HttpUtility.ParseQueryString(url.Query);
-                return query.Get("v");
-            }
-            if (url.AbsolutePath.StartsWith("/shorts/", StringComparison.OrdinalIgnoreCase) ||
-                url.AbsolutePath.StartsWith("/embed/", StringComparison.OrdinalIgnoreCase))
-            {
-                var parts = url.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
-                return parts.Length >= 2 ? parts[1] : null;
-            }
-        }
-    }
-    catch { /* ignore */ }
-    return null;
-}
-
-private static ImageDto? ToImageDto(Image? img)
-{
-    if (img == null || string.IsNullOrWhiteSpace(img.URL)) return null;
-    return new ImageDto
-    {
-        Url = img.URL,
-        Title = string.IsNullOrWhiteSpace(img.Title) ? "" : img.Title!,
-        MetaDatas = (img.MetaDatas ?? new List<MetaData>())
-            .Select(m => new MetaDataDto { Label = m.Label, Value = m.Value })
-            .ToList()
-    };
-}
-
-private static VideoDto? ToVideoDto(Video? vid)
-{
-    if (vid == null || string.IsNullOrWhiteSpace(vid.URL)) return null;
-    return new VideoDto
-    {
-        Url = vid.URL,
-        Title = string.IsNullOrWhiteSpace(vid.Title) ? "Trailer" : vid.Title!,
-        YouTubeId = ExtractYouTubeId(vid.URL),
-        MetaDatas = (vid.MetaDatas ?? new List<MetaData>())
-            .Select(m => new MetaDataDto { Label = m.Label, Value = m.Value })
-            .ToList()
-    };
-}
-
-    
-    private static Image MapImageDto(ImageDto dto, Image? existing = null)
-    {
-        var id = existing?.Id ?? ObjectId.GenerateNewId().ToString();
-        return new Image
-        {
-            Id = id,
-            URL = (dto.Url ?? "").Trim(),
-            Title = string.IsNullOrWhiteSpace(dto.Title) ? null : dto.Title.Trim(),
-            MetaDatas = (dto.MetaDatas ?? new List<MetaDataDto>())
-                .Select(m => new MetaData { Label = m.Label, Value = m.Value })
-                .ToList()
-        };
-    }
-
-private static Video MapVideoDto(VideoDto dto, Video? existing = null)
-{
-    var id = existing?.Id ?? ObjectId.GenerateNewId().ToString();
-    return new Video
-    {
-        Id = id,
-        URL = (dto.Url ?? "").Trim(),
-        Title = string.IsNullOrWhiteSpace(dto.Title) ? "Trailer" : dto.Title.Trim(),
-        MetaDatas = (dto.MetaDatas ?? new List<MetaDataDto>())
-            .Select(m => new MetaData { Label = m.Label, Value = m.Value })
-            .ToList()
-    };
-}
-
-    private static Image NormalizeImage(Image src)
-    {
-        return new Image
-        {
-            Id = string.IsNullOrWhiteSpace(src.Id) ? ObjectId.GenerateNewId().ToString() : src.Id,
-            URL = (src.URL ?? "").Trim(),
-            Title = string.IsNullOrWhiteSpace(src.Title) ? null : src.Title.Trim(),
-            MetaDatas = (src.MetaDatas ?? new List<MetaData>())
-                .Select(m => new MetaData { Label = m.Label, Value = m.Value })
-                .ToList()
-        };
-    }
-
-private static Video NormalizeVideo(Video src)
-{
-    return new Video
-    {
-        Id = string.IsNullOrWhiteSpace(src.Id) ? ObjectId.GenerateNewId().ToString() : src.Id,
-        URL = (src.URL ?? "").Trim(),
-        Title = string.IsNullOrWhiteSpace(src.Title) ? null : src.Title.Trim(),
-        MetaDatas = (src.MetaDatas ?? new List<MetaData>())
-            .Select(m => new MetaData { Label = m.Label, Value = m.Value })
-            .ToList()
-    };
-}
-
-    private static bool TryParseDay(string s, out DateTime dayUtc)
-    {
-        // from/to ISO gün (yyyy-MM-dd) bekleniyor; zaman bilgisi verilirse da kabul edelim
-        // Her halükarda UTC güne yuvarlıyoruz.
-        if (DateTime.TryParseExact(s, new[] { "yyyy-MM-dd" }, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var d1))
-        { dayUtc = d1.Date; return true; }
-        if (DateTime.TryParse(s, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var d2))
-        { dayUtc = d2.Date; return true; }
-        dayUtc = default;
-        return false;
-    }
-
-    private static IEnumerable<DateTime> EnumerateDays(DateTime startInclusive, DateTime endInclusive)
-    {
-        for (var d = startInclusive.Date; d <= endInclusive.Date; d = d.AddDays(1))
-            yield return d;
-    }
-
-    /// <summary>
-    /// Koleksiyon için günlük sayım döndürür. Tarih alanı coalesce:
-    /// Createdat > CreatedAt > CreatedDate > createdAt > ObjectId timestamp
-    /// </summary>
-    private static async Task<List<(string day, int count)>> AggregateDailyCountsAsync<TDoc>(
-        IMongoCollection<TDoc> col,
-        DateTime startInclusive,
-        DateTime endExclusive,
-        CancellationToken ct)
-    {
-        // $addFields: _created = coalesce(...)
-        var coalesceCreated = new BsonDocument("$ifNull", new BsonArray {
-            "$Createdat",
-            new BsonDocument("$ifNull", new BsonArray {
-                "$CreatedAt",
-                new BsonDocument("$ifNull", new BsonArray {
-                    "$CreatedDate",
-                    new BsonDocument("$ifNull", new BsonArray {
-                        "$createdAt",
-                        new BsonDocument("$toDate", "$_id") // ObjectId → Date
-                    })
-                })
-            })
-        });
-
-        var pipeline = new List<BsonDocument>
-        {
-            new BsonDocument("$addFields", new BsonDocument("_created", coalesceCreated)),
-            new BsonDocument("$match", new BsonDocument {
-                { "_created", new BsonDocument {
-                    { "$gte", startInclusive },
-                    { "$lt",  endExclusive }
-                }}
-            }),
-            new BsonDocument("$group", new BsonDocument {
-                { "_id", new BsonDocument("$dateToString", new BsonDocument {
-                    { "format", "%Y-%m-%d" },
-                    { "date", "$_created" }
-                }) },
-                { "count", new BsonDocument("$sum", 1) }
-            }),
-            new BsonDocument("$project", new BsonDocument {
-                { "_id", 0 },
-                { "day", "$_id" },
-                { "count", 1 }
-            }),
-            new BsonDocument("$sort", new BsonDocument("day", 1))
-        };
-
-        var cursor = await col.Database
-            .GetCollection<BsonDocument>(col.CollectionNamespace.CollectionName)
-            .Aggregate<BsonDocument>(pipeline, cancellationToken: ct)
-            .ToListAsync(ct);
-
-        var result = new List<(string day, int count)>(cursor.Count);
-        foreach (var doc in cursor)
-        {
-            var day = doc.GetValue("day", BsonNull.Value)?.AsString ?? "";
-            var cnt = doc.GetValue("count", BsonNull.Value)?.ToInt32() ?? 0;
-            if (!string.IsNullOrEmpty(day))
-                result.Add((day, cnt));
-        }
-        return result;
-    }
-
+    // ---------------- Games ----------------
 
     [HttpGet("games")]
     [Authorize(Roles = "Admin")]
@@ -429,10 +179,10 @@ private static Video NormalizeVideo(Video src)
         {
             var genres = await _genres.Find(g => allGenreIds.Contains(g.Id)).ToListAsync();
             foreach (var gr in genres)
-                genreDict[gr.Id] = gr.Name; // Modelinde isim alanı farklıysa burayı uyarlayın
+                genreDict[gr.Id] = gr.Name;
         }
 
-        // ---- PLATFORMS (YENİ)
+        // ---- PLATFORMS
         var allPlatformIds = details.Where(d => d.PlatformIds != null)
                                     .SelectMany(d => d.PlatformIds!)
                                     .Distinct()
@@ -443,7 +193,7 @@ private static Video NormalizeVideo(Video src)
         {
             var plats = await _platforms.Find(p => allPlatformIds.Contains(p.Id)).ToListAsync();
             foreach (var p in plats)
-                platformDict[p.Id] = p.Name; // Platform modelinizde ad alanı farklıysa uyarlayın (örn: p.Platform_Name)
+                platformDict[p.Id] = p.Name;
         }
 
         var dto = games.Select(g =>
@@ -458,7 +208,6 @@ private static Video NormalizeVideo(Video src)
                         genreNames.Add(name);
             }
 
-            // YENİ: platform adları
             var platformNames = new List<string>();
             if (det?.PlatformIds != null)
             {
@@ -473,68 +222,59 @@ private static Video NormalizeVideo(Video src)
                 Cover = g.Main_image_URL,
                 Title = g.Game_Name,
                 Release = g.Release_Date,
-                Developer = det?.Developer ?? g.Studio, // developer öncelik
+                Developer = det?.Developer ?? g.Studio,
                 Genres = genreNames,
-                Platforms = platformNames,              // YENİ
+                Platforms = platformNames,
                 Story = det?.Story
             };
         })
         .ToList();
 
+        _ = _logger.InfoAsync(SystemLogCategory.GameManagement, $"Games listed skip={skip} take={take} q={(q ?? "").Trim()}", User?.Identity?.Name ?? "admin");
         return Ok(dto);
     }
 
     [HttpDelete("games/{id}")]
-[Authorize(Roles = "Admin")]
-public async Task<IActionResult> DeleteGame(string id, CancellationToken ct)
-{
-    var game = await _games.Find(g => g.Id == id).FirstOrDefaultAsync(ct);
-    if (game == null)
-        return NotFound(new { message = "Game not found" });
-
-    // 1) Bu oyuna ait detayları al (requirements referanslarını yakalamak için)
-    var details = await _details.Find(d => d.GameId == id).FirstOrDefaultAsync(ct);
-    var minReqId = details?.MinRequirementId;
-    var recReqId = details?.RecRequirementId;
-
-    // 2) Gallery (görseller/videolar) — GameId bazlı tek doküman; yine de DeleteMany güvenli
-    await _galleries.DeleteManyAsync(g => g.GameId == id, ct);
-
-    // 3) Game_Details — hepsini sil
-    await _details.DeleteManyAsync(d => d.GameId == id, ct);
-
-    // 4) Game — ana kayıt
-    await _games.DeleteOneAsync(g => g.Id == id, ct);
-
-    // 5) Requirements: başka oyunda kullanılmıyorsa sil
-    if (!string.IsNullOrWhiteSpace(minReqId))
+    [Authorize(Roles = "Admin")]
+    public async Task<IActionResult> DeleteGame(string id, CancellationToken ct)
     {
-        var inUseElsewhere = await _details
-            .Find(d => d.MinRequirementId == minReqId)
-            .Limit(1)
-            .AnyAsync(ct);
-        if (!inUseElsewhere)
-            await _minReqs.DeleteOneAsync(x => x.Id == minReqId, ct);
+        try
+        {
+            var game = await _games.Find(g => g.Id == id).FirstOrDefaultAsync(ct);
+            if (game == null)
+            {
+                await _logger.WarningAsync(SystemLogCategory.GameManagement, $"DeleteGame failed (not found) id={id}", User?.Identity?.Name ?? "admin");
+                return NotFound(new { message = "Game not found" });
+            }
+
+            var details = await _details.Find(d => d.GameId == id).FirstOrDefaultAsync(ct);
+            var minReqId = details?.MinRequirementId;
+            var recReqId = details?.RecRequirementId;
+
+            await _galleries.DeleteManyAsync(g => g.GameId == id, ct);
+            await _details.DeleteManyAsync(d => d.GameId == id, ct);
+            await _games.DeleteOneAsync(g => g.Id == id, ct);
+
+            if (!string.IsNullOrWhiteSpace(minReqId))
+            {
+                var inUseElsewhere = await _details.Find(d => d.MinRequirementId == minReqId).Limit(1).AnyAsync(ct);
+                if (!inUseElsewhere) await _minReqs.DeleteOneAsync(x => x.Id == minReqId, ct);
+            }
+            if (!string.IsNullOrWhiteSpace(recReqId))
+            {
+                var inUseElsewhere = await _details.Find(d => d.RecRequirementId == recReqId).Limit(1).AnyAsync(ct);
+                if (!inUseElsewhere) await _recReqs.DeleteOneAsync(x => x.Id == recReqId, ct);
+            }
+
+            await _logger.SuccessAsync(SystemLogCategory.GameManagement, $"Game deleted id={id} title={game.Game_Name}", User?.Identity?.Name ?? "admin");
+            return Ok(new { message = $"Game {id} deleted (details, gallery and unused requirements removed)" });
+        }
+        catch (Exception ex)
+        {
+            await _logger.ErrorAsync(SystemLogCategory.System, $"DeleteGame error id={id}: {ex.Message}", User?.Identity?.Name ?? "admin");
+            throw;
+        }
     }
-
-    if (!string.IsNullOrWhiteSpace(recReqId))
-    {
-        var inUseElsewhere = await _details
-            .Find(d => d.RecRequirementId == recReqId)
-            .Limit(1)
-            .AnyAsync(ct);
-        if (!inUseElsewhere)
-            await _recReqs.DeleteOneAsync(x => x.Id == recReqId, ct);
-    }
-
-    // NOT: Genres/Platforms ortak; burada silmiyoruz.
-    // Eğer "tamamen" temizlik istersen, ayrıca:
-    //  - Yorumlar/incelemeler/trivia gibi diğer koleksiyonların da GameId ile silinmesi,
-    //  - Orphan (hiçbir oyunda kullanılmayan) genre/platform gibi kayıtların periyodik job ile temizlenmesi önerilir.
-
-    return Ok(new { message = $"Game {id} deleted (details, gallery and unused requirements removed)" });
-}
-
 
     [HttpGet("games/{id}")]
     [Authorize(Roles = "Admin")]
@@ -542,56 +282,49 @@ public async Task<IActionResult> DeleteGame(string id, CancellationToken ct)
     {
         var game = await _games.Find(g => g.Id == id).FirstOrDefaultAsync(ct);
         if (game == null)
+        {
+            await _logger.WarningAsync(SystemLogCategory.GameManagement, $"GetGameById not found id={id}", User?.Identity?.Name ?? "admin");
             return NotFound(new { message = "Game not found" });
+        }
 
         var details = await _details.Find(d => d.GameId == id).FirstOrDefaultAsync(ct);
-
         var gallery = await _galleries.Find(g => g.GameId == id).FirstOrDefaultAsync(ct);
 
-        List<ImageDto> imagesDto = new();
-        List<VideoDto> videosDto = new();
+        var imagesDto = (gallery?.Images ?? new List<Image>())
+            .Where(i => !string.IsNullOrWhiteSpace(i.URL))
+            .Select(i => new ImageDto
+            {
+                Url = i.URL,
+                Title = string.IsNullOrWhiteSpace(i.Title) ? "Screenshot" : i.Title,
+                MetaDatas = i.MetaDatas?.Select(m => new MetaDataDto { Label = m.Label, Value = m.Value }).ToList() ?? new List<MetaDataDto>()
+            })
+            .ToList();
 
-        if (gallery?.Images != null)
-        {
-            imagesDto = gallery.Images
-                .Where(i => !string.IsNullOrWhiteSpace(i.URL))
-                .Select(i => new ImageDto
-                {
-                    Url = i.URL,
-                    Title = string.IsNullOrWhiteSpace(i.Title) ? "Screenshot" : i.Title,
-                    MetaDatas = i.MetaDatas?.Select(m => new MetaDataDto { Label = m.Label, Value = m.Value }).ToList() ?? new List<MetaDataDto>()
-                })
-                .ToList();
-        }
+        var videosDto = (gallery?.Videos ?? new List<Video>())
+            .Where(v => !string.IsNullOrWhiteSpace(v.URL))
+            .Select(v => new VideoDto
+            {
+                Url = v.URL,
+                Title = string.IsNullOrWhiteSpace(v.Title) ? "Trailer" : v.Title,
+                YouTubeId = null,
+                MetaDatas = v.MetaDatas?.Select(m => new MetaDataDto { Label = m.Label, Value = m.Value }).ToList() ?? new List<MetaDataDto>()
+            })
+            .ToList();
 
-        if (gallery?.Videos != null)
-        {
-            videosDto = gallery.Videos
-                .Where(v => !string.IsNullOrWhiteSpace(v.URL))
-                .Select(v => new VideoDto
-                {
-                    Url = v.URL,
-                    Title = string.IsNullOrWhiteSpace(v.Title) ? "Trailer" : v.Title,
-                    YouTubeId = null, // DB modelinde yoksa null bırak
-                    MetaDatas = v.MetaDatas?.Select(m => new MetaDataDto { Label = m.Label, Value = m.Value }).ToList() ?? new List<MetaDataDto>()
-                })
-                .ToList();
-        }
-
-        // --- GENRES ---
+        // GENRES
         var genreNames = new List<string>();
         if (details?.GenreIds != null && details.GenreIds.Count > 0)
         {
             var genres = await _genres.Find(g => details.GenreIds.Contains(g.Id)).ToListAsync(ct);
-            genreNames = genres.Select(g => g.Name).ToList(); // Genre modelinde "Name" property olduğunu varsayıyorum
+            genreNames = genres.Select(g => g.Name).ToList();
         }
 
-        // --- PLATFORMS ---
+        // PLATFORMS
         var platformNames = new List<string>();
         if (details?.PlatformIds != null && details.PlatformIds.Count > 0)
         {
             var plats = await _platforms.Find(p => details.PlatformIds.Contains(p.Id)).ToListAsync(ct);
-            platformNames = plats.Select(p => p.Name).ToList(); // Platform modelinde "Name" property olduğunu varsayıyorum
+            platformNames = plats.Select(p => p.Name).ToList();
         }
 
         string? minText = null, recText = null;
@@ -605,7 +338,6 @@ public async Task<IActionResult> DeleteGame(string id, CancellationToken ct)
             var r = await _recReqs.Find(x => x.Id == details.RecRequirementId).FirstOrDefaultAsync(ct);
             recText = r?.Text;
         }
-
 
         var dto = new GameDetailDto
         {
@@ -646,34 +378,23 @@ public async Task<IActionResult> DeleteGame(string id, CancellationToken ct)
             Gallery = new GalleryDto { Images = imagesDto, Videos = videosDto },
 
             StoreLinks = (details?.Store_Links ?? new List<StoreLink>())
-        .Select(s => new StoreLinkDto
-        {
-            StoreId = s.StoreId,
-            Store = s.Store,
-            Slug = s.Slug,
-            Domain = s.Domain,
-            Url = s.Url,
-            ExternalId = s.ExternalId
-        })
-        .ToList(),
+                .Select(s => new StoreLinkDto
+                {
+                    StoreId = s.StoreId,
+                    Store = s.Store,
+                    Slug = s.Slug,
+                    Domain = s.Domain,
+                    Url = s.Url,
+                    ExternalId = s.ExternalId
+                })
+                .ToList(),
 
-        Featured_Section_Background = ToImageDto(game.Featured_Section_Background),
-        Poster_Image                = ToImageDto(game.Poster_Image),
-        Poster_Video                = ToVideoDto(game.Poster_Video)
+            Featured_Section_Background = ToImageDto(game.Featured_Section_Background),
+            Poster_Image = ToImageDto(game.Poster_Image),
+            Poster_Video = ToVideoDto(game.Poster_Video)
         };
 
-        
-
-        // --- CREDITS ---
-        dto.GameDirector = details?.GameDirector ?? "";
-        dto.Writers = details?.ScenarioWriters ?? new List<string>();
-        dto.ArtDirector = details?.ArtDirector ?? "";
-        dto.LeadActors = details?.LeadActors ?? new List<string>();
-        dto.VoiceActors = details?.VoiceActors ?? new List<string>();
-        dto.MusicComposer = details?.MusicComposer ?? "";
-        dto.CinematicsVfxTeam = details?.Cinematics_VfxTeam ?? new List<string>();
-
-
+        _ = _logger.InfoAsync(SystemLogCategory.GameManagement, $"Game fetched id={id} title={game.Game_Name}", User?.Identity?.Name ?? "admin");
         return Ok(dto);
     }
 
@@ -684,248 +405,244 @@ public async Task<IActionResult> DeleteGame(string id, CancellationToken ct)
         if (dto == null || string.IsNullOrWhiteSpace(dto.Title))
             return BadRequest(new { message = "Invalid payload: 'title' is required." });
 
-        // ---- Game (temel) ----
-        var game = await _games.Find(g => g.Id == id).FirstOrDefaultAsync(ct);
-        if (game == null)
-            return NotFound(new { message = "Game not found" });
-
-        game.Game_Name = dto.Title;
-        game.Release_Date = dto.ReleaseDate;
-        game.Studio = dto.Studio;
-        game.GgDb_Rating = dto.GgdbRating;
-        game.Metacritic_Rating = dto.MetacriticRating;
-        game.Main_image_URL = dto.Cover;
-        game.Main_video_URL = dto.Video;
-        game.Crew = dto.Crew ?? new List<string>();
-        game.Soundtrack = dto.Soundtrack ?? new List<string>();
-
-      if (dto.Featured_Section_Background != null)
-        game.Featured_Section_Background = MapImageDto(dto.Featured_Section_Background, game.Featured_Section_Background);
-
-    if (dto.Poster_Image != null)
-        game.Poster_Image = MapImageDto(dto.Poster_Image, game.Poster_Image);
-
-    if (dto.Poster_Video != null)
-        game.Poster_Video = MapVideoDto(dto.Poster_Video, game.Poster_Video);
-
-
-        await _games.ReplaceOneAsync(g => g.Id == id, game, cancellationToken: ct);
-
-        // ---- Game_Details (detay) ----
-        var details = await _details.Find(d => d.GameId == id).FirstOrDefaultAsync(ct)
-                      ?? new Game_Details { GameId = id };
-
-        details.Developer = dto.Developer;
-        details.Publisher = dto.Publisher;
-        details.Story = dto.Story;
-        details.Tags = dto.Tags ?? new List<string>();
-        details.DLCs = dto.Dlcs ?? new List<string>();
-        details.Awards = dto.Awards;
-        details.Engines = dto.GameEngine ?? new List<string>();
-        
-                // ---- Credits ----
-        // ---- Credits (patch tarzı) ----
-if (dto.GameDirector != null)        details.GameDirector        = NormStr(dto.GameDirector);
-if (dto.Writers != null)             details.ScenarioWriters     = NormList(dto.Writers);
-if (dto.ArtDirector != null)         details.ArtDirector         = NormStr(dto.ArtDirector);
-if (dto.LeadActors != null)          details.LeadActors          = NormList(dto.LeadActors);
-if (dto.VoiceActors != null)         details.VoiceActors         = NormList(dto.VoiceActors);
-if (dto.MusicComposer != null)       details.MusicComposer       = NormStr(dto.MusicComposer);
-if (dto.CinematicsVfxTeam != null)   details.Cinematics_VfxTeam  = NormList(dto.CinematicsVfxTeam);
-
-        // (opsiyonel) replace öncesi null-safe garanti
-        details.GameDirector       ??= "";
-        details.ScenarioWriters    ??= new List<string>();
-        details.ArtDirector        ??= "";
-        details.LeadActors         ??= new List<string>();
-        details.VoiceActors        ??= new List<string>();
-        details.MusicComposer      ??= "";
-        details.Cinematics_VfxTeam ??= new List<string>();
-
-
-        details.TimeToBeat_Hastily = dto.TimeToBeat_Hastily;
-        details.TimeToBeat_Normally = dto.TimeToBeat_Normally;
-        details.TimeToBeat_Completely = dto.TimeToBeat_Completely;
-
-
-        details.Content_Warnings = dto.ContentWarnings ?? new List<string>();
-        details.Age_Ratings = dto.AgeRatings ?? new List<string>();
-
-        details.Audio_Language = dto.AudioLanguages ?? new List<string>();
-        details.Subtitles = dto.SubtitleLanguages ?? new List<string>();
-        details.Interface_Language = dto.InterfaceLanguages ?? new List<string>();
-        details.Screenshots = dto.Screenshots ?? new List<string>();
-        details.Trailers = dto.Trailers ?? new List<TrailerDto>();
-        
-
-        // ---- Gallery upsert (images/videos) ----
-        bool hasIncomingMedia =
-            (dto.Images != null && dto.Images.Count > 0) ||
-            (dto.Videos != null && dto.Videos.Count > 0);
-
-        if (hasIncomingMedia)
+        try
         {
-            var existingGallery = await _galleries.Find(g => g.GameId == id).FirstOrDefaultAsync(ct)
-                                 ?? new Gallery { Id = ObjectId.GenerateNewId().ToString(), GameId = id };
-
-            existingGallery.Images = (dto.Images ?? new List<ImageDto>())
-                .Where(i => !string.IsNullOrWhiteSpace(i.Url))
-                .Select(i => new Image
-                {
-                    Id = ObjectId.GenerateNewId().ToString(),
-                    URL = i.Url.Trim(),
-                    Title = string.IsNullOrWhiteSpace(i.Title) ? "Screenshot" : i.Title.Trim(),
-                    MetaDatas = (i.MetaDatas ?? new List<MetaDataDto>())
-                        .Select(m => new MetaData { Label = m.Label, Value = m.Value })
-                        .ToList()
-                })
-                .ToList();
-
-            existingGallery.Videos = (dto.Videos ?? new List<VideoDto>())
-                .Where(v => !string.IsNullOrWhiteSpace(v.Url))
-                .Select(v => new Video
-                {
-                    Id = ObjectId.GenerateNewId().ToString(),
-                    URL = v.Url.Trim(),
-                    Title = string.IsNullOrWhiteSpace(v.Title) ? "Trailer" : v.Title.Trim(),
-                    MetaDatas = (v.MetaDatas ?? new List<MetaDataDto>())
-                        .Select(m => new MetaData { Label = m.Label, Value = m.Value })
-                        .ToList()
-                })
-                .ToList();
-
-            await _galleries.ReplaceOneAsync(
-                g => g.GameId == id,
-                existingGallery,
-                new ReplaceOptions { IsUpsert = true },
-                ct
-            );
-        }
-
-
-
-        // ---- System Requirements (Min / Rec) — upsert + Id bağlama ----
-        // dto.MinRequirements / dto.RecRequirements string (metin) kabul edildiği varsayımıyla
-        if (dto.MinRequirements is { Length: > 0 } minText) // null veya whitespace değil
-        {
-            if (!string.IsNullOrEmpty(details.MinRequirementId))
+            var game = await _games.Find(g => g.Id == id).FirstOrDefaultAsync(ct);
+            if (game == null)
             {
-                var upd = Builders<MinRequirement>.Update.Set(x => x.Text, minText);
-                await _minReqs.UpdateOneAsync(
-                    Builders<MinRequirement>.Filter.Eq(x => x.Id, details.MinRequirementId),
-                    upd,
-                    cancellationToken: ct
+                await _logger.WarningAsync(SystemLogCategory.GameManagement, $"UpdateGame not found id={id}", User?.Identity?.Name ?? "admin");
+                return NotFound(new { message = "Game not found" });
+            }
+
+            game.Game_Name = dto.Title;
+            game.Release_Date = dto.ReleaseDate;
+            game.Studio = dto.Studio;
+            game.GgDb_Rating = dto.GgdbRating;
+            game.Metacritic_Rating = dto.MetacriticRating;
+            game.Main_image_URL = dto.Cover;
+            game.Main_video_URL = dto.Video;
+            game.Crew = dto.Crew ?? new List<string>();
+            game.Soundtrack = dto.Soundtrack ?? new List<string>();
+
+            if (dto.Featured_Section_Background != null)
+                game.Featured_Section_Background = MapImageDto(dto.Featured_Section_Background, game.Featured_Section_Background);
+            if (dto.Poster_Image != null)
+                game.Poster_Image = MapImageDto(dto.Poster_Image, game.Poster_Image);
+            if (dto.Poster_Video != null)
+                game.Poster_Video = MapVideoDto(dto.Poster_Video, game.Poster_Video);
+
+            await _games.ReplaceOneAsync(g => g.Id == id, game, cancellationToken: ct);
+
+            var details = await _details.Find(d => d.GameId == id).FirstOrDefaultAsync(ct)
+                          ?? new Game_Details { GameId = id };
+
+            details.Developer = dto.Developer;
+            details.Publisher = dto.Publisher;
+            details.Story = dto.Story;
+            details.Tags = dto.Tags ?? new List<string>();
+            details.DLCs = dto.Dlcs ?? new List<string>();
+            details.Awards = dto.Awards;
+            details.Engines = dto.GameEngine ?? new List<string>();
+
+            if (dto.GameDirector != null) details.GameDirector = NormStr(dto.GameDirector);
+            if (dto.Writers != null) details.ScenarioWriters = NormList(dto.Writers);
+            if (dto.ArtDirector != null) details.ArtDirector = NormStr(dto.ArtDirector);
+            if (dto.LeadActors != null) details.LeadActors = NormList(dto.LeadActors);
+            if (dto.VoiceActors != null) details.VoiceActors = NormList(dto.VoiceActors);
+            if (dto.MusicComposer != null) details.MusicComposer = NormStr(dto.MusicComposer);
+            if (dto.CinematicsVfxTeam != null) details.Cinematics_VfxTeam = NormList(dto.CinematicsVfxTeam);
+
+            details.GameDirector ??= "";
+            details.ScenarioWriters ??= new List<string>();
+            details.ArtDirector ??= "";
+            details.LeadActors ??= new List<string>();
+            details.VoiceActors ??= new List<string>();
+            details.MusicComposer ??= "";
+            details.Cinematics_VfxTeam ??= new List<string>();
+
+            details.TimeToBeat_Hastily = dto.TimeToBeat_Hastily;
+            details.TimeToBeat_Normally = dto.TimeToBeat_Normally;
+            details.TimeToBeat_Completely = dto.TimeToBeat_Completely;
+
+            details.Content_Warnings = dto.ContentWarnings ?? new List<string>();
+            details.Age_Ratings = dto.AgeRatings ?? new List<string>();
+            details.Audio_Language = dto.AudioLanguages ?? new List<string>();
+            details.Subtitles = dto.SubtitleLanguages ?? new List<string>();
+            details.Interface_Language = dto.InterfaceLanguages ?? new List<string>();
+            details.Screenshots = dto.Screenshots ?? new List<string>();
+            details.Trailers = dto.Trailers ?? new List<TrailerDto>();
+
+            var hasIncomingMedia = (dto.Images != null && dto.Images.Count > 0)
+                                   || (dto.Videos != null && dto.Videos.Count > 0);
+
+            if (hasIncomingMedia)
+            {
+                var existingGallery = await _galleries.Find(g => g.GameId == id).FirstOrDefaultAsync(ct)
+                                     ?? new Gallery { Id = ObjectId.GenerateNewId().ToString(), GameId = id };
+
+                existingGallery.Images = (dto.Images ?? new List<ImageDto>())
+                    .Where(i => !string.IsNullOrWhiteSpace(i.Url))
+                    .Select(i => new Image
+                    {
+                        Id = ObjectId.GenerateNewId().ToString(),
+                        URL = i.Url.Trim(),
+                        Title = string.IsNullOrWhiteSpace(i.Title) ? "Screenshot" : i.Title.Trim(),
+                        MetaDatas = (i.MetaDatas ?? new List<MetaDataDto>())
+                            .Select(m => new MetaData { Label = m.Label, Value = m.Value })
+                            .ToList()
+                    })
+                    .ToList();
+
+                existingGallery.Videos = (dto.Videos ?? new List<VideoDto>())
+                    .Where(v => !string.IsNullOrWhiteSpace(v.Url))
+                    .Select(v => new Video
+                    {
+                        Id = ObjectId.GenerateNewId().ToString(),
+                        URL = v.Url.Trim(),
+                        Title = string.IsNullOrWhiteSpace(v.Title) ? "Trailer" : v.Title.Trim(),
+                        MetaDatas = (v.MetaDatas ?? new List<MetaDataDto>())
+                            .Select(m => new MetaData { Label = m.Label, Value = m.Value })
+                            .ToList()
+                    })
+                    .ToList();
+
+                await _galleries.ReplaceOneAsync(
+                    g => g.GameId == id,
+                    existingGallery,
+                    new ReplaceOptions { IsUpsert = true },
+                    ct
                 );
+            }
+
+            if (dto.MinRequirements is { Length: > 0 } minText)
+            {
+                if (!string.IsNullOrEmpty(details.MinRequirementId))
+                {
+                    var upd = Builders<MinRequirement>.Update.Set(x => x.Text, minText);
+                    await _minReqs.UpdateOneAsync(
+                        Builders<MinRequirement>.Filter.Eq(x => x.Id, details.MinRequirementId),
+                        upd,
+                        cancellationToken: ct
+                    );
+                }
+                else
+                {
+                    var doc = new MinRequirement { Text = minText };
+                    await _minReqs.InsertOneAsync(doc, cancellationToken: ct);
+                    details.MinRequirementId = doc.Id;
+                }
             }
             else
             {
-                var doc = new MinRequirement { Text = minText }; // _id’yi Mongo versin
-                await _minReqs.InsertOneAsync(doc, cancellationToken: ct);
-                details.MinRequirementId = doc.Id;
+                if (!string.IsNullOrEmpty(details.MinRequirementId))
+                {
+                    try { await _minReqs.DeleteOneAsync(x => x.Id == details.MinRequirementId, ct); } catch { }
+                }
+                details.MinRequirementId = null;
             }
-        }
-        else
-        {
-            // referansı temizle (belgeyi silmek opsiyonel)
-            if (!string.IsNullOrEmpty(details.MinRequirementId))
-            {
-                try { await _minReqs.DeleteOneAsync(x => x.Id == details.MinRequirementId, ct); } catch { /* yoksay */ }
-            }
-            details.MinRequirementId = null;
-        }
 
-        // REC
-        if (dto.RecRequirements is { Length: > 0 } recText)
-        {
-            if (!string.IsNullOrEmpty(details.RecRequirementId))
+            if (dto.RecRequirements is { Length: > 0 } recText)
             {
-                var upd = Builders<RecRequirement>.Update.Set(x => x.Text, recText);
-                await _recReqs.UpdateOneAsync(
-                    Builders<RecRequirement>.Filter.Eq(x => x.Id, details.RecRequirementId),
-                    upd,
-                    cancellationToken: ct
-                );
+                if (!string.IsNullOrEmpty(details.RecRequirementId))
+                {
+                    var upd = Builders<RecRequirement>.Update.Set(x => x.Text, recText);
+                    await _recReqs.UpdateOneAsync(
+                        Builders<RecRequirement>.Filter.Eq(x => x.Id, details.RecRequirementId),
+                        upd,
+                        cancellationToken: ct
+                    );
+                }
+                else
+                {
+                    var doc = new RecRequirement { Text = recText };
+                    await _recReqs.InsertOneAsync(doc, cancellationToken: ct);
+                    details.RecRequirementId = doc.Id;
+                }
             }
             else
             {
-                var doc = new RecRequirement { Text = recText };
-                await _recReqs.InsertOneAsync(doc, cancellationToken: ct);
-                details.RecRequirementId = doc.Id;
+                if (!string.IsNullOrEmpty(details.RecRequirementId))
+                {
+                    try { await _recReqs.DeleteOneAsync(x => x.Id == details.RecRequirementId, ct); } catch { }
+                }
+                details.RecRequirementId = null;
             }
-        }
-        else
-        {
-            if (!string.IsNullOrEmpty(details.RecRequirementId))
+
+            if (dto.Genres != null)
             {
-                try { await _recReqs.DeleteOneAsync(x => x.Id == details.RecRequirementId, ct); } catch { /* yoksay */ }
+                var genreDocs = await _genres
+                    .Find(g => dto.Genres.Contains(g.Name))
+                    .Project(g => new { g.Id, g.Name })
+                    .ToListAsync(ct);
+
+                details.GenreIds = genreDocs.Select(x => x.Id).ToList();
             }
-            details.RecRequirementId = null;
-        }
 
-        // ---- Genres (isim → id)
-        if (dto.Genres != null)
+            if (dto.Platforms != null)
+            {
+                var platformDocs = await _platforms
+                    .Find(p => dto.Platforms.Contains(p.Name))
+                    .Project(p => new { p.Id, p.Name })
+                    .ToListAsync(ct);
+
+                details.PlatformIds = platformDocs.Select(x => x.Id).ToList();
+            }
+
+            details.Store_Links = (dto.StoreLinks ?? new List<StoreLinkDto>())
+               .Where(s => !string.IsNullOrWhiteSpace(s.Url))
+               .Select(s => new StoreLink
+               {
+                   StoreId = s.StoreId ?? 0,
+                   Store = s.Store ?? "",
+                   Slug = s.Slug ?? "",
+                   Domain = s.Domain ?? "",
+                   Url = s.Url ?? "",
+                   ExternalId = s.ExternalId
+               })
+               .ToList();
+
+            await _details.ReplaceOneAsync(d => d.GameId == id, details, new ReplaceOptions { IsUpsert = true }, ct);
+
+            await _logger.SuccessAsync(SystemLogCategory.GameManagement, $"Game updated id={id} title={dto.Title}", User?.Identity?.Name ?? "admin");
+            return Ok(new { message = $"Game {id} updated" });
+        }
+        catch (Exception ex)
         {
-            var genreDocs = await _genres
-                .Find(g => dto.Genres.Contains(g.Name))
-                .Project(g => new { g.Id, g.Name })
-                .ToListAsync(ct);
-
-            details.GenreIds = genreDocs.Select(x => x.Id).ToList();
+            await _logger.ErrorAsync(SystemLogCategory.System, $"UpdateGame error id={id}: {ex.Message}", User?.Identity?.Name ?? "admin");
+            throw;
         }
-
-        // ---- Platforms (isim → id)
-        if (dto.Platforms != null)
-        {
-            var platformDocs = await _platforms
-                .Find(p => dto.Platforms.Contains(p.Name))
-                .Project(p => new { p.Id, p.Name })
-                .ToListAsync(ct);
-
-            details.PlatformIds = platformDocs.Select(x => x.Id).ToList();
-
-        }
-
-        details.Store_Links = (dto.StoreLinks ?? new List<StoreLinkDto>())
-           .Where(s => !string.IsNullOrWhiteSpace(s.Url))
-           .Select(s => new StoreLink
-           {
-               StoreId = s.StoreId ?? 0,
-               Store = s.Store ?? "",
-               Slug = s.Slug ?? "",
-               Domain = s.Domain ?? "",
-               Url = s.Url ?? "",
-               ExternalId = s.ExternalId
-           })
-           .ToList();
-        await _details.ReplaceOneAsync(d => d.GameId == id, details, new ReplaceOptions { IsUpsert = true }, ct);
-
-        return Ok(new { message = $"Game {id} updated" });
     }
 
+    [HttpPost("approve/{id}")]
+    [Authorize(Roles = "Admin")]
+    public async Task<IActionResult> Approve(string id)
+    {
+        await _logger.SuccessAsync(SystemLogCategory.GameManagement, $"Game {id} approved", User?.Identity?.Name ?? "admin");
+        return Ok();
+    }
+
+    // ---------------- Users ----------------
 
     [HttpGet("getUsers")]
     [Authorize(Roles = "Admin")]
     public async Task<ActionResult<List<UserDto>>> GetUsers()
     {
-        // Tüm kullanıcıları getir
         var users = await _users.Find(_ => true).ToListAsync();
-
-        // DTO’ya map et
         var userDtos = users.Select(u => new UserDto
         {
             Id = u.Id,
             UserName = u.UserName,
             Email = u.Email,
-            Password = string.Empty, // Şifre hash'i API'de dönülmez, boş geçiyoruz
+            Password = string.Empty,
             Birthdate = u.Birthdate,
             Country = u.Country,
             ProfileImageUrl = u.ProfileImageUrl,
             UserType = u.UserType
         }).ToList();
 
+        _ = _logger.InfoAsync(SystemLogCategory.UserActions, $"Users listed count={userDtos.Count}", User?.Identity?.Name ?? "admin");
         return Ok(userDtos);
     }
-
 
     [HttpDelete("deleteUser/{id}")]
     [Authorize(Roles = "Admin")]
@@ -933,11 +650,13 @@ if (dto.CinematicsVfxTeam != null)   details.Cinematics_VfxTeam  = NormList(dto.
     {
         var user = await _users.Find(g => g.Id == id).FirstOrDefaultAsync(ct);
         if (user == null)
+        {
+            await _logger.WarningAsync(SystemLogCategory.UserActions, $"DeleteUser failed (not found) id={id}", User?.Identity?.Name ?? "admin");
             return NotFound(new { message = "User not found" });
+        }
 
         await _users.DeleteOneAsync(g => g.Id == id, ct);
-
-
+        await _logger.SuccessAsync(SystemLogCategory.UserActions, $"User deleted id={id} name={user.UserName}", User?.Identity?.Name ?? "admin");
         return Ok(new { message = $"User {id} deleted" });
     }
 
@@ -947,44 +666,222 @@ if (dto.CinematicsVfxTeam != null)   details.Cinematics_VfxTeam  = NormList(dto.
     }
 
     [HttpPatch("{id}/role")]
+    [Authorize(Roles = "Admin")]
     public async Task<IActionResult> UpdateUserRole(string id, [FromBody] UpdateUserRoleInput input, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(id))
             return BadRequest(new { message = "id required" });
 
         if (!Enum.TryParse<UserType>(input.Role, true, out var ut))
+        {
+            await _logger.WarningAsync(SystemLogCategory.UserActions, $"UpdateUserRole invalid role='{input.Role}' id={id}", User?.Identity?.Name ?? "admin");
             return BadRequest(new { message = "Role must be 'User' or 'Admin'." });
+        }
 
         var filter = Builders<User>.Filter.Eq(u => u.Id, id);
         var update = Builders<User>.Update.Set(u => u.UserType, ut);
 
         var res = await _users.UpdateOneAsync(filter, update, cancellationToken: ct);
-        if (res.MatchedCount == 0) return NotFound(new { message = "User not found." });
+        if (res.MatchedCount == 0)
+        {
+            await _logger.WarningAsync(SystemLogCategory.UserActions, $"UpdateUserRole not found id={id}", User?.Identity?.Name ?? "admin");
+            return NotFound(new { message = "User not found." });
+        }
 
+        await _logger.SuccessAsync(SystemLogCategory.UserActions, $"UpdateUserRole id={id} role={ut}", User?.Identity?.Name ?? "admin");
         return Ok(new { ok = true, id, userType = ut.ToString() });
     }
 
+    // ---------------- Helpers ----------------
 
+    private static BsonDocument CoalesceCreatedExpr() =>
+        new BsonDocument("$ifNull", new BsonArray {
+            "$Createdat",
+            new BsonDocument("$ifNull", new BsonArray {
+                "$CreatedAt",
+                new BsonDocument("$ifNull", new BsonArray {
+                    "$CreatedDate",
+                    new BsonDocument("$ifNull", new BsonArray {
+                        "$createdAt",
+                        new BsonDocument("$toDate", "$_id")
+                    })
+                })
+            })
+        });
 
-private static string NormStr(string? s)
-    => string.IsNullOrWhiteSpace(s) ? "" : s.Trim();
+    private static async Task<long> CountInRangeAsync<TDoc>(IMongoCollection<TDoc> col, DateTime startInc, DateTime endExc, CancellationToken ct)
+    {
+        var createdExpr = CoalesceCreatedExpr();
 
-private static List<string> NormList(IEnumerable<string>? xs)
-    => xs?.Where(x => !string.IsNullOrWhiteSpace(x))
-          .Select(x => x.Trim())
-          .Distinct(StringComparer.OrdinalIgnoreCase)
-          .ToList()
-       ?? new List<string>();
+        var pipeline = new List<BsonDocument>
+        {
+            new BsonDocument("$addFields", new BsonDocument("_created", createdExpr)),
+            new BsonDocument("$match", new BsonDocument("_created", new BsonDocument {
+                { "$gte", startInc }, { "$lt", endExc }
+            })),
+            new BsonDocument("$count", "c")
+        };
 
+        var list = await col.Database.GetCollection<BsonDocument>(col.CollectionNamespace.CollectionName)
+            .Aggregate<BsonDocument>(pipeline, cancellationToken: ct)
+            .ToListAsync(ct);
 
-private static List<string> ParseCsv(string? s)
-    => string.IsNullOrWhiteSpace(s)
-       ? new List<string>()
-       : s.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-          .Where(x => !string.IsNullOrWhiteSpace(x))
-          .Select(x => x.Trim())
-          .Distinct(StringComparer.OrdinalIgnoreCase)
-          .ToList();
+        return list.Count > 0 ? list[0].GetValue("c", 0).ToInt64() : 0L;
+    }
 
+    private static async Task<(long curr, long prev)> CountWindowPairAsync<TDoc>(
+        IMongoCollection<TDoc> col,
+        DateTime currStart, DateTime currEnd,
+        DateTime prevStart, DateTime prevEnd,
+        CancellationToken ct)
+    {
+        var curr = await CountInRangeAsync(col, currStart, currEnd, ct);
+        var prev = await CountInRangeAsync(col, prevStart, prevEnd, ct);
+        return (curr, prev);
+    }
+
+    private static bool TryParseDay(string s, out DateTime dayUtc)
+    {
+        if (DateTime.TryParseExact(s, new[] { "yyyy-MM-dd" }, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var d1))
+        { dayUtc = d1.Date; return true; }
+        if (DateTime.TryParse(s, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var d2))
+        { dayUtc = d2.Date; return true; }
+        dayUtc = default;
+        return false;
+    }
+
+    private static IEnumerable<DateTime> EnumerateDays(DateTime startInclusive, DateTime endInclusive)
+    {
+        for (var d = startInclusive.Date; d <= endInclusive.Date; d = d.AddDays(1))
+            yield return d;
+    }
+
+    private static Image MapImageDto(ImageDto dto, Image? existing = null)
+    {
+        var id = existing?.Id ?? ObjectId.GenerateNewId().ToString();
+        return new Image
+        {
+            Id = id,
+            URL = (dto.Url ?? "").Trim(),
+            Title = string.IsNullOrWhiteSpace(dto.Title) ? null : dto.Title.Trim(),
+            MetaDatas = (dto.MetaDatas ?? new List<MetaDataDto>())
+                .Select(m => new MetaData { Label = m.Label, Value = m.Value })
+                .ToList()
+        };
+    }
+
+    private static Video MapVideoDto(VideoDto dto, Video? existing = null)
+    {
+        var id = existing?.Id ?? ObjectId.GenerateNewId().ToString();
+        return new Video
+        {
+            Id = id,
+            URL = (dto.Url ?? "").Trim(),
+            Title = string.IsNullOrWhiteSpace(dto.Title) ? "Trailer" : dto.Title.Trim(),
+            MetaDatas = (dto.MetaDatas ?? new List<MetaDataDto>())
+                .Select(m => new MetaData { Label = m.Label, Value = m.Value })
+                .ToList()
+        };
+    }
+
+    private static ImageDto? ToImageDto(Image? img)
+    {
+        if (img == null || string.IsNullOrWhiteSpace(img.URL)) return null;
+        return new ImageDto
+        {
+            Url = img.URL,
+            Title = string.IsNullOrWhiteSpace(img.Title) ? "" : img.Title!,
+            MetaDatas = (img.MetaDatas ?? new List<MetaData>())
+                .Select(m => new MetaDataDto { Label = m.Label, Value = m.Value })
+                .ToList()
+        };
+    }
+
+    private static VideoDto? ToVideoDto(Video? vid)
+    {
+        if (vid == null || string.IsNullOrWhiteSpace(vid.URL)) return null;
+        return new VideoDto
+        {
+            Url = vid.URL,
+            Title = string.IsNullOrWhiteSpace(vid.Title) ? "Trailer" : vid.Title!,
+            YouTubeId = null, // DB modelinde varsa ExtractYouTubeId ile doldurulabilir
+            MetaDatas = (vid.MetaDatas ?? new List<MetaData>())
+                .Select(m => new MetaDataDto { Label = m.Label, Value = m.Value })
+                .ToList()
+        };
+    }
+
+    private static string NormStr(string? s)
+        => string.IsNullOrWhiteSpace(s) ? "" : s.Trim();
+
+    private static List<string> NormList(IEnumerable<string>? xs)
+        => xs?.Where(x => !string.IsNullOrWhiteSpace(x))
+              .Select(x => x.Trim())
+              .Distinct(StringComparer.OrdinalIgnoreCase)
+              .ToList()
+           ?? new List<string>();
+           
+
+           // Koleksiyon için gün bazında sayım yapar: [{ day: "yyyy-MM-dd", count: n }]
+private static async Task<List<(string day, int count)>> AggregateDailyCountsAsync<TDoc>(
+    IMongoCollection<TDoc> col,
+    DateTime startInclusive,
+    DateTime endExclusive,
+    CancellationToken ct)
+{
+    // Tarih alanı coalesce: Createdat > CreatedAt > CreatedDate > createdAt > ObjectId ts
+    var coalesceCreated = new BsonDocument("$ifNull", new BsonArray {
+        "$Createdat",
+        new BsonDocument("$ifNull", new BsonArray {
+            "$CreatedAt",
+            new BsonDocument("$ifNull", new BsonArray {
+                "$CreatedDate",
+                new BsonDocument("$ifNull", new BsonArray {
+                    "$createdAt",
+                    new BsonDocument("$toDate", "$_id")
+                })
+            })
+        })
+    });
+
+    var pipeline = new List<BsonDocument>
+    {
+        new BsonDocument("$addFields", new BsonDocument("_created", coalesceCreated)),
+        new BsonDocument("$match", new BsonDocument {
+            { "_created", new BsonDocument {
+                { "$gte", startInclusive },
+                { "$lt",  endExclusive }
+            }}
+        }),
+        new BsonDocument("$group", new BsonDocument {
+            { "_id", new BsonDocument("$dateToString", new BsonDocument {
+                { "format", "%Y-%m-%d" },
+                { "date", "$_created" }
+            }) },
+            { "count", new BsonDocument("$sum", 1) }
+        }),
+        new BsonDocument("$project", new BsonDocument {
+            { "_id", 0 },
+            { "day", "$_id" },
+            { "count", 1 }
+        }),
+        new BsonDocument("$sort", new BsonDocument("day", 1))
+    };
+
+    var cursor = await col.Database
+        .GetCollection<BsonDocument>(col.CollectionNamespace.CollectionName)
+        .Aggregate<BsonDocument>(pipeline, cancellationToken: ct)
+        .ToListAsync(ct);
+
+    var result = new List<(string day, int count)>(cursor.Count);
+    foreach (var doc in cursor)
+    {
+        var day = doc.GetValue("day", BsonNull.Value)?.AsString ?? "";
+        var cnt = doc.GetValue("count", BsonNull.Value)?.ToInt32() ?? 0;
+        if (!string.IsNullOrEmpty(day))
+            result.Add((day, cnt));
+    }
+    return result;
+}
 
 }

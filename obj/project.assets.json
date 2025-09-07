@@ -5201,31 +5201,24 @@
     ]
   },
   "packageFolders": {
-    "C:\\Users\\Hamza Enes\\.nuget\\packages\\": {},
-    "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages": {}
+    "/Users/elifnazucal/.nuget/packages/": {}
   },
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "C:\\Users\\Hamza Enes\\OneDrive\\Masaüstü\\GGDBsonv2\\commenttogame\\CommentToGame.csproj",
+      "projectUniqueName": "/Users/elifnazucal/Desktop/GGDB/CommentToGame/CommentToGame.csproj",
       "projectName": "CommentToGame",
-      "projectPath": "C:\\Users\\Hamza Enes\\OneDrive\\Masaüstü\\GGDBsonv2\\commenttogame\\CommentToGame.csproj",
-      "packagesPath": "C:\\Users\\Hamza Enes\\.nuget\\packages\\",
-      "outputPath": "C:\\Users\\Hamza Enes\\OneDrive\\Masaüstü\\GGDBsonv2\\commenttogame\\obj\\",
+      "projectPath": "/Users/elifnazucal/Desktop/GGDB/CommentToGame/CommentToGame.csproj",
+      "packagesPath": "/Users/elifnazucal/.nuget/packages/",
+      "outputPath": "/Users/elifnazucal/Desktop/GGDB/CommentToGame/obj/",
       "projectStyle": "PackageReference",
-      "fallbackFolders": [
-        "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
-      ],
       "configFilePaths": [
-        "C:\\Users\\Hamza Enes\\AppData\\Roaming\\NuGet\\NuGet.Config",
-        "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.FallbackLocation.config",
-        "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
+        "/Users/elifnazucal/.nuget/NuGet/NuGet.Config"
       ],
       "originalTargetFrameworks": [
         "net9.0"
       ],
       "sources": {
-        "C:\\Program Files (x86)\\Microsoft SDKs\\NuGetPackages\\": {},
         "https://api.nuget.org/v3/index.json": {}
       },
       "frameworks": {
@@ -5244,7 +5237,7 @@
         "auditLevel": "low",
         "auditMode": "direct"
       },
-      "SdkAnalysisLevel": "9.0.300"
+      "SdkAnalysisLevel": "9.0.200"
     },
     "frameworks": {
       "net9.0": {
@@ -5308,7 +5301,7 @@
             "privateAssets": "all"
           }
         },
-        "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\9.0.300/PortableRuntimeIdentifierGraph.json"
+        "runtimeIdentifierGraphPath": "/usr/local/share/dotnet/sdk/9.0.202/PortableRuntimeIdentifierGraph.json"
       }
     }
   }

@@ -1,5 +1,6 @@
 using CommentToGame.Data;
 using CommentToGame.Services;
+using CommentToGame.Models;                    // SystemLogCategory
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
@@ -16,7 +17,8 @@ builder.Services.AddSingleton<PreviewImportService>();
 var jwtKey = builder.Configuration.GetValue<string>("Jwt:Key")
              ?? throw new InvalidOperationException("Jwt:Key is missing in configuration.");
 
-builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+builder.Services
+    .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(o =>
     {
         o.TokenValidationParameters = new TokenValidationParameters
@@ -27,6 +29,25 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ValidateAudience = false,
             RoleClaimType = ClaimTypes.Role
         };
+
+        // 🔔 JWT event'lerinden gerçek log üret
+        o.Events = new JwtBearerEvents
+    {
+    OnAuthenticationFailed = async ctx => { /* ... */ },
+
+    OnTokenValidated = async ctx =>
+    {
+        var path = ctx.Request.Path.Value ?? "";
+        if (!path.StartsWith("/api/auth/login") &&
+            !path.StartsWith("/api/auth/refresh"))
+            return; // diğer isteklerde loglama
+
+        using var scope = ctx.HttpContext.RequestServices.CreateScope();
+        var slog = scope.ServiceProvider.GetRequiredService<ISystemLogger>();
+        var userName = ctx.Principal?.Identity?.Name ?? "unknown";
+        await slog.InfoAsync(SystemLogCategory.Authentication, "JWT token validated", userName);
+    }
+    };
     });
 
 builder.Services.AddHttpClient<IRawgClient, RawgClient>();
@@ -37,11 +58,14 @@ builder.Services.AddSingleton<IIgdbClient, IgdbClient>();
 builder.Services.AddSingleton<IgdbImportService>();
 builder.Services.AddSingleton<GameEditService>();
 
+// 🔧 Log servisi
+builder.Services.AddScoped<SystemLogService>();
+builder.Services.AddScoped<ISystemLogger, SystemLogger>();
+
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(o =>
 {
-
     o.SwaggerDoc("v1", new OpenApiInfo { Title = "CommentToGame API", Version = "v1" });
     o.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
     {
@@ -79,7 +103,7 @@ builder.Services.AddCors(opt =>
             )
             .AllowAnyHeader()
             .AllowAnyMethod()
-            .AllowCredentials(); // gerekiyorsa
+            .AllowCredentials();
     });
 });
 
@@ -99,7 +123,13 @@ if (app.Environment.IsDevelopment())
 app.UseCors(CorsPolicy);
 
 app.UseAuthentication();
+
+// 🌐 Global exception logging middleware (500'leri yakala)
+app.UseMiddleware<CommentToGame.Middleware.ExceptionLoggingMiddleware>();
+
 app.UseAuthorization();
+
+// ❌ Seed DEMO çağrısı YOK; gerçek loglar gelecek.
 
 // Mongo index bootstrap (async scope)
 using (var scope = app.Services.CreateScope())
