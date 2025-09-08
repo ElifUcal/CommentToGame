@@ -80,7 +80,6 @@ public class AdminController : ControllerBase
         var usersDelta = DeltaPct(uCurr, uPrev);
         var gamesDelta = DeltaPct(gCurr, gPrev);
 
-        _ = _logger.InfoAsync(SystemLogCategory.System, $"UserGameCount queried (windowDays={windowDays})", User?.Identity?.Name ?? "unknown");
 
         return Ok(new
         {
@@ -128,7 +127,6 @@ public class AdminController : ControllerBase
             list = list.Select(x => { cu += x.u; cg += x.g; return (x.day, cu, cg); }).ToList();
         }
 
-        _ = _logger.InfoAsync(SystemLogCategory.System, $"Growth requested from={from} to={to} mode={modeNorm}", User?.Identity?.Name ?? "unknown");
 
         var payload = list.Select(x => new { date = x.day, users = x.u, games = x.g }).ToList();
         return Ok(payload);
@@ -230,7 +228,6 @@ public class AdminController : ControllerBase
         })
         .ToList();
 
-        _ = _logger.InfoAsync(SystemLogCategory.GameManagement, $"Games listed skip={skip} take={take} q={(q ?? "").Trim()}", User?.Identity?.Name ?? "admin");
         return Ok(dto);
     }
 
@@ -394,7 +391,6 @@ public class AdminController : ControllerBase
             Poster_Video = ToVideoDto(game.Poster_Video)
         };
 
-        _ = _logger.InfoAsync(SystemLogCategory.GameManagement, $"Game fetched id={id} title={game.Game_Name}", User?.Identity?.Name ?? "admin");
         return Ok(dto);
     }
 
@@ -640,7 +636,6 @@ public class AdminController : ControllerBase
             UserType = u.UserType
         }).ToList();
 
-        _ = _logger.InfoAsync(SystemLogCategory.UserActions, $"Users listed count={userDtos.Count}", User?.Identity?.Name ?? "admin");
         return Ok(userDtos);
     }
 
