@@ -56,7 +56,8 @@ public class AuthController : ControllerBase
             PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password),
             Birthdate = request.Birthdate,
             Country = request.Country.Trim(),
-            Createdat = DateTime.Now
+            Createdat = DateTime.Now,
+            isBanned = false,
         };
 
         await _users.InsertOneAsync(user);
@@ -68,6 +69,7 @@ public class AuthController : ControllerBase
     {
         if (request is null || string.IsNullOrWhiteSpace(request.UserName) || string.IsNullOrWhiteSpace(request.Password))
             return BadRequest("Kullanıcı adı ve şifre zorunludur.");
+        
 
         var user = await _users.Find(u => u.UserName == request.UserName).FirstOrDefaultAsync();
         if (user is null)

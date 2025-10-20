@@ -633,7 +633,8 @@ public class AdminController : ControllerBase
             Birthdate = u.Birthdate,
             Country = u.Country,
             ProfileImageUrl = u.ProfileImageUrl,
-            UserType = u.UserType
+            UserType = u.UserType,
+            isBanned = u.isBanned
         }).ToList();
 
         return Ok(userDtos);
@@ -654,6 +655,46 @@ public class AdminController : ControllerBase
         await _logger.SuccessAsync(SystemLogCategory.UserActions, $"User deleted id={id} name={user.UserName}", User?.Identity?.Name ?? "admin");
         return Ok(new { message = $"User {id} deleted" });
     }
+public sealed record BanRequest(bool IsBanned);
+
+[HttpPatch("{id}/ban")]
+[Authorize(Roles = "Admin")]
+public async Task<IActionResult> BanUser(string id, [FromBody] BanRequest req, CancellationToken ct = default)
+{
+    if (string.IsNullOrWhiteSpace(id))
+        return BadRequest(new { message = "id required" });
+
+    // (Opsiyonel) Kendini banlama koruması
+    var adminId = User.FindFirst("sub")?.Value;
+    if (!string.IsNullOrEmpty(adminId) && adminId == id)
+        return BadRequest(new { message = "You cannot ban yourself." });
+
+    var filter = Builders<User>.Filter.Eq(u => u.Id, id); 
+    var update = Builders<User>.Update.Set(u => u.isBanned, req.IsBanned);
+
+    var options = new FindOneAndUpdateOptions<User, User>
+    {
+        IsUpsert = false,
+        ReturnDocument = ReturnDocument.After,
+        Projection = Builders<User>.Projection
+            .Include(u => u.Id)
+            .Include(u => u.UserName)
+            .Include(u => u.isBanned)
+    };
+
+    var updated = await _users.FindOneAndUpdateAsync(filter, update, options, ct);
+    if (updated is null)
+    {
+        await _logger.WarningAsync(SystemLogCategory.UserActions, $"User id: {id} is not found.");
+        return NotFound(new { message = "User not found." });
+    }
+
+    var action = req.IsBanned ? "banned" : "unbanned";
+    await _logger.SuccessAsync(SystemLogCategory.UserActions, $"User id: {id} {action}.");
+
+    return Ok(new { ok = true, id = updated.Id, isBanned = updated.isBanned });
+}
+
 
     public sealed class UpdateUserRoleInput
     {

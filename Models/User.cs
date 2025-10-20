@@ -39,4 +39,6 @@ public class User
 
     [BsonElement("ProfileImageUrl")]
     public string? ProfileImageUrl { get; set; }
+
+    public bool isBanned { get; set; }
 }

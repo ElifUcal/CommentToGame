@@ -74,11 +74,12 @@ public sealed class IgdbClient : IIgdbClient
         var safe = query.Replace("\"", "\\\"");
 
         // gamesten alt alanları doğrudan getiriyoruz (cover.image_id, platforms.name, category)
-        var rows = await PostAsync<GameRowSearch>(
-            "games",
-            $"fields id,name,first_release_date,category,cover.image_id,platforms.name; " +
-            $"where name ~ \"{safe}\"* & cate; limit {pageSize}; offset {offset};",
-            ct);
+          var rows = await PostAsync<GameRowSearch>(
+        "games",
+        $@"fields id,name,first_release_date,category,cover.image_id,platforms.name;
+           where name ~ ""{safe}""*;
+           limit {pageSize}; offset {offset};",
+        ct);
 
         var items = rows.Select(r =>
         {
@@ -111,67 +112,81 @@ public sealed class IgdbClient : IIgdbClient
         };
     }
 
-public async Task<IgdbPagedGames> SearchGamesSmartAsync(string query, int page, int pageSize, CancellationToken ct = default)
+    public async Task<IgdbPagedGames> SearchGamesSmartAsync(string query, int page, int pageSize, CancellationToken ct = default)
 {
     if (string.IsNullOrWhiteSpace(query)) query = "";
     if (page <= 0) page = 1;
     if (pageSize <= 0) pageSize = 40;
 
     var offset = (page - 1) * pageSize;
-    var safe = query.Replace("\"", "\\\"");
-    var toks = Tokens(query); // token filtre (alakasız “4” gibi eşleşmeleri elemek için)
+    var safe   = query.Replace("\"", "\\\"");
+    var toks   = Tokens(query);
 
-    // === PRE-FLIGHT: ana oyunu name ile dene (tam eşleşme)
-    var exactMain = await PostAsync<GameRowSearch>(
+    // --- normalize & slug (™, ®, noktalama vs. toleransı için)
+    var normQ  = NormalizeName(query);
+    var slugQ  = SlugifyStrict(query);
+
+    // === PRE-FLIGHT A: slug ile ana oyun
+    var exactBySlug = await PostAsync<GameRowSearch>(
         "games",
         $@"fields id,name,first_release_date,category,cover.image_id,platforms.name,parent_game,version_parent,slug;
-           where name = ""{safe}"" & category = 0 & parent_game = null & version_parent = null;
+           where slug = ""{slugQ}"" & category = 0 & parent_game = null & version_parent = null;
            limit 1;",
         ct);
 
-    // === PRE-FLIGHT 2: slug ile dene (ör. "The Sims 4" -> "the-sims-4")
-    GameRowSearch[] exactMainBySlug = Array.Empty<GameRowSearch>();
-    if (exactMain.Length == 0)
+    // === PRE-FLIGHT B: name ~ "query"* ile ana oyun (™ farkı için ‘=’ yerine ‘~’)
+    var exactByNameLoose = await PostAsync<GameRowSearch>(
+        "games",
+        $@"fields id,name,first_release_date,category,cover.image_id,platforms.name,parent_game,version_parent,slug;
+           where name ~ ""{safe}""* & category = 0 & parent_game = null & version_parent = null;
+           limit 3;",
+        ct);
+
+    // === PRE-FLIGHT C: alternative_names → game id’lerini çek
+    var altRows = await PostAsync<AltNameRow>(
+        "alternative_names",
+        $@"fields id,name,game;
+           where name ~ ""{safe}""*;
+           limit 50;",
+        ct);
+
+    var altIds   = altRows.Where(a => a.game.HasValue).Select(a => a.game!.Value).Distinct().ToArray();
+    GameRowSearch[] fromAlts = Array.Empty<GameRowSearch>();
+    if (altIds.Length > 0)
     {
-        var slug = Slugify(query);
-        exactMainBySlug = await PostAsync<GameRowSearch>(
+        fromAlts = await PostAsync<GameRowSearch>(
             "games",
             $@"fields id,name,first_release_date,category,cover.image_id,platforms.name,parent_game,version_parent,slug;
-               where slug = ""{slug}"" & category = 0 & parent_game = null & version_parent = null;
-               limit 1;",
+               where id = ({string.Join(',', altIds)});
+               limit {Math.Min(altIds.Length, 200)};",
             ct);
     }
 
-    // === 1) /v4/search: ID’leri topla
+    // === 1) /v4/search: ID’leri topla (kapsamı genişlet)
     var searchRows = await PostAsync<SearchRow>(
         "search",
         $@"fields name, game;
            search ""{safe}"";
-           limit {pageSize};
+           limit {Math.Min(pageSize * 3, 100)};
            offset {offset};",
         ct);
 
-    var ids = searchRows
-        .Where(s => s.game.HasValue)
-        .Select(s => s.game!.Value)
-        .Distinct()
-        .ToList();
-
+    var ids = searchRows.Where(s => s.game.HasValue).Select(s => s.game!.Value).Distinct().ToList();
     if (ids.Count == 0)
-        return await SearchGamesAsync(query, page, pageSize, ct); // prefix-where fallback
+        return await SearchGamesAsync(query, page, pageSize, ct);
 
-    // === 2) /v4/games: ana oyun filtresiyle dene
+    // === 2) /v4/games: ana oyun filtresi
     var rowsMainOnly = await PostAsync<GameRowSearch>(
         "games",
         $@"fields id,name,first_release_date,category,cover.image_id,platforms.name,parent_game,version_parent,slug;
-           where id = ({string.Join(",", ids)}) 
-             & category = 0 
-             & parent_game = null 
+           where id = ({string.Join(",", ids)})
+             & category = 0
+             & parent_game = null
              & version_parent = null;
            limit {ids.Count};",
         ct);
 
-    // === 3) /v4/games: tüm sonuçlar (ilgili paket/kit/versiyonlar)
+    // === 3) /v4/games: tüm sonuçlar
     var rowsAll = await PostAsync<GameRowSearch>(
         "games",
         $@"fields id,name,first_release_date,category,cover.image_id,platforms.name,parent_game,version_parent,slug;
@@ -179,46 +194,70 @@ public async Task<IgdbPagedGames> SearchGamesSmartAsync(string query, int page, 
            limit {ids.Count};",
         ct);
 
-    // === 4) Birleştir: pre-flight (name/slug) + ana oyunlar + tüm sonuçlar → ID’ye göre tekilleştir
-    var combined = exactMain
-        .Concat(exactMainBySlug)
+    // === 4) Birleştir + tekilleştir
+    var combined = exactBySlug
+        .Concat(exactByNameLoose)
+        .Concat(fromAlts)
         .Concat(rowsMainOnly)
         .Concat(rowsAll)
         .GroupBy(r => r.id)
         .Select(g => g.First())
         .ToList();
 
-    // === 5) Token bazlı filtre: tüm anlamlı token’lar isimde geçsin (The Sims 4 → sims & 4)
+    // === 5) Token filtresi
     var filtered = combined.Where(r => ContainsAllTokens(r.name, toks)).ToList();
     if (filtered.Count == 0 && toks.Count > 0)
         filtered = combined.Where(r => (r.name ?? "").ToLowerInvariant().Contains(toks[0])).ToList();
     if (filtered.Count == 0)
         filtered = combined;
 
-    // === 6) Sıralama: tam eşleşme → ana oyun → parent/version null → tarih
+    // === (Opsiyonel) normalize/slug eşleşen ana oyunu en üste pin’le
+    var mainCandidates = filtered.Where(r =>
+        (r.category ?? 99) == 0 && !r.parent_game.HasValue && !r.version_parent.HasValue).ToList();
+
+    var topMain = mainCandidates.FirstOrDefault(r =>
+        NormalizeName(r.name ?? "") == normQ ||
+        (r.slug ?? "").Equals(slugQ, StringComparison.OrdinalIgnoreCase));
+
+    if (topMain is not null)
+        filtered = new[] { topMain }.Concat(filtered.Where(r => r.id != topMain.id)).ToList();
+
+    // === 6) Sıralama: normalize tam eşleşme > slug tam eşleşme > ana oyun > (kalanlar)
     var ordered = filtered
-        .OrderByDescending(r => string.Equals(r.name, query, StringComparison.OrdinalIgnoreCase)) // tam ad en üst
-        .ThenBy(r => r.category ?? int.MaxValue)                 // 0 (Main Game) öne
-        .ThenBy(r => r.parent_game.HasValue ? 1 : 0)             // parent_game = null öne
-        .ThenBy(r => r.version_parent.HasValue ? 1 : 0)          // version_parent = null öne
+        .OrderByDescending(r => NormalizeName(r.name ?? "") == normQ)
+        .ThenByDescending(r => (r.slug ?? "").Equals(slugQ, StringComparison.OrdinalIgnoreCase))
+        .ThenBy(r => r.category ?? int.MaxValue)                // 0 (Main Game) öne
+        .ThenBy(r => r.parent_game.HasValue ? 1 : 0)            // parent_game = null öne
+        .ThenBy(r => r.version_parent.HasValue ? 1 : 0)         // version_parent = null öne
         .ThenBy(r => r.first_release_date ?? long.MaxValue)
         .ToList();
 
-    // === 7) Map ve dönüş
+    // === 7) Map & return
     var items = ordered.Select(MapToCard).ToList();
-    var next = searchRows.Length < pageSize ? null : "next";
-
+    var next  = searchRows.Length < Math.Min(pageSize * 3, 100) ? null : "next";
     return new IgdbPagedGames { Results = items, Next = next };
 
     // ---- helpers ----
-    static string Slugify(string s) =>
+    static string NormalizeName(string s)
+    {
+        if (string.IsNullOrWhiteSpace(s)) return "";
+        var lowered = s.ToLowerInvariant();
+        lowered = lowered.Replace("™", "").Replace("®", "");
+        lowered = Regex.Replace(lowered, @"[’'`]", "");
+        lowered = Regex.Replace(lowered, @"[^\p{L}\p{Nd}\s]+", " ");
+        lowered = Regex.Replace(lowered, @"\s+", " ").Trim();
+        return lowered;
+    }
+
+    static string SlugifyStrict(string s) =>
+        Regex.Replace(s.Trim().ToLowerInvariant(), @"[^a-z0-9]+", "-").Trim('-');
+
+    static string Slugify(string s) => // mevcut kodunla uyumlu kalsın
         Regex.Replace(s.Trim().ToLowerInvariant(), @"[^a-z0-9]+", "-").Trim('-');
 
     static List<string> Tokens(string s)
     {
-        var stop = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-        { "the", "a", "an", "of", "and" };
-
+        var stop = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "the", "a", "an", "of", "and" };
         return Regex.Split(s, @"\W+")
                     .Where(t => !string.IsNullOrWhiteSpace(t))
                     .Select(t => t.ToLowerInvariant())
@@ -245,21 +284,27 @@ public async Task<IgdbPagedGames> SearchGamesSmartAsync(string query, int page, 
 
         return new IgdbGameCard
         {
-            Id = r.id,
-            Name = r.name ?? $"game-{r.id}",
-            Year = year,
-            Cover = coverUrl,
-            Platforms = r.platforms?.Select(p => p.name)
-                                   .Where(n => !string.IsNullOrWhiteSpace(n))
-                                   .Distinct()
-                                   .ToList() ?? new List<string>(),
-            Category = CatToText(r.category)
+            Id        = r.id,
+            Name      = r.name ?? $"game-{r.id}",
+            Year      = year,
+            Cover     = coverUrl,
+            Platforms = r.platforms?.Select(p => p.name).Where(n => !string.IsNullOrWhiteSpace(n)).Distinct().ToList()
+                        ?? new List<string>(),
+            Category  = CatToText(r.category)
         };
     }
 }
 
 
 
+
+//Smart yardımcı dto
+private sealed class AltNameRow
+{
+    public long id { get; set; }
+    public string? name { get; set; }
+    public long? game { get; set; }
+}
 
 
 

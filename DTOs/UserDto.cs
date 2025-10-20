@@ -14,7 +14,8 @@ namespace CommentToGame.Dtos
         public required string Country { get; set; }
 
         public string? ProfileImageUrl { get; set; }
-        public  UserType? UserType { get; set; }
+        public UserType? UserType { get; set; }
         
+        public bool isBanned { get; set; }
     }
 }
