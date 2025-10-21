@@ -52,62 +52,74 @@ namespace CommentToGame.Controllers
             _gameDetails = service.GetCollection<Game_Details>("GameDetails");
         }
 
-        /// GET /api/merge/preview?igdbId=1020&rawgId=3498
-        [HttpGet("preview")]
-        public async Task<IActionResult> Preview(
-            [FromQuery] long igdbId,
-            [FromQuery] int rawgId,
-            CancellationToken ct = default)
-        {
-            if (igdbId <= 0 || rawgId <= 0)
-                return BadRequest(new { message = "igdbId ve rawgId zorunlu." });
+[HttpGet("preview")]
+public async Task<IActionResult> Preview(
+    [FromQuery] long igdbId,
+    [FromQuery] int rawgId,
+    CancellationToken ct = default)
+{
+    if (igdbId <= 0 || rawgId <= 0)
+        return BadRequest(new { message = "igdbId ve rawgId zorunlu." });
 
-            IgdbGameDetail? igdbGame = await _igdb.GetGameDetailAsync(igdbId, ct);
-            if (igdbGame is null)
-                return NotFound(new { message = $"IGDB game not found (id={igdbId})" });
+    var igdbGame = await _igdb.GetGameDetailAsync(igdbId, ct);
+    if (igdbGame is null)
+        return NotFound(new { message = $"IGDB game not found (id={igdbId})" });
 
-            IgdbTimeToBeat? ttb = await _igdb.GetTimeToBeatAsync(igdbId, ct);
+    var ttb = await _igdb.GetTimeToBeatAsync(igdbId, ct);
 
-            RawgGameDetail? rawgGame = await _rawg.GetGameDetailAsync(rawgId);
-            if (rawgGame is null)
-                return NotFound(new { message = $"RAWG game not found (id={rawgId})" });
+    var rawgGame = await _rawg.GetGameDetailAsync(rawgId);
+    if (rawgGame is null)
+        return NotFound(new { message = $"RAWG game not found (id={rawgId})" });
 
-            // Store linkleri
-            var rawgStores = await _rawg.GetGameStoresAsync(rawgId);
-            var storeLinks = MapRawgStoresToLinks(rawgStores);
+    var rawgStores = await _rawg.GetGameStoresAsync(rawgId);
+    var storeLinks = MapRawgStoresToLinks(rawgStores);
 
-            // IGDB additions → DLC adları
-            var additions = await _igdb.GetGameAdditionsAsync(igdbId, ct);
-            var dlcNames = additions?.Results?
-                .Select(a => a.Name)
-                .Where(n => !string.IsNullOrWhiteSpace(n))
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
-                .ToList() ?? new List<string>();
+    var additions = await _igdb.GetGameAdditionsAsync(igdbId, ct);
+    var dlcNames = additions?.Results?
+        .Select(a => a.Name)
+        .Where(n => !string.IsNullOrWhiteSpace(n))
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
+        .ToList() ?? new List<string>();
 
-            // RAWG dev team → cast/crew
-            var team = await _rawg.GetGameDevelopmentTeamAsync(rawgId);
-            var (cast, crew) = SplitCastCrew(team);
+    var team = await _rawg.GetGameDevelopmentTeamAsync(rawgId);
+    var (cast, crew) = SplitCastCrew(team);
 
-            var (igdbScreens, igdbTrailers) = await _igdb.GetMediaAsync(igdbId, ct);
+    // --- MEDIA: IGDB + RAWG ---
+    var (igdbScreens, igdbTrailers) = await _igdb.GetMediaAsync(igdbId, ct);
+    var (rawgScreens, rawgTrailers) = await _rawg.GetMediaAsync(rawgId, ct);
 
+    // 1) Screens: IGDB (image_id->url) + RAWG (full url)
+    var mergedScreens = igdbScreens
+    .Concat(rawgScreens)
+    .Where(u => !string.IsNullOrWhiteSpace(u))
+    .Distinct(StringComparer.OrdinalIgnoreCase)
+    .ToList();
 
-            var merged = GameMerge.Merge(
-                igdbGame,
-                rawgGame,
-                ttb,
-                storeLinks,
-                cast,
-                crew,
-                igdbDlcs: dlcNames,
-                igdbScreenshots: igdbScreens,
-                igdbTrailers: igdbTrailers
-            );
+    // 2) Trailers: uniq key = YouTubeId ?? Url
+    var mergedTrailers = igdbTrailers
+    .Concat(rawgTrailers)
+    .Where(t => !string.IsNullOrWhiteSpace(t.YouTubeId) || !string.IsNullOrWhiteSpace(t.Url))
+    .GroupBy(t => (t.YouTubeId ?? t.Url)!.Trim(), StringComparer.OrdinalIgnoreCase)
+    .Select(g => g.First())
+    .ToList();
 
+  
+var merged = GameMerge.Merge(
+    igdbGame,
+    rawgGame,
+    ttb,
+    storeLinks,
+    cast,
+    crew,
+    igdbDlcs: dlcNames,
+    igdbScreenshots: mergedScreens, // isim şimdilik böyle kalsın
+    igdbTrailers: mergedTrailers
+);
 
+    return Ok(merged);
+}
 
-            return Ok(merged);
-        }
 
         /// POST /api/merge/import
         [HttpPost("import")]

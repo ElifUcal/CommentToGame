@@ -182,8 +182,117 @@ public class RawgClient : IRawgClient
         throw new NotImplementedException();
     }
 
-    public Task<(List<string> screenshots, List<TrailerDto> trailers)> GetMediaAsync(int id, CancellationToken ct = default)
+    public async Task<(List<string> screenshots, List<TrailerDto> trailers)>
+    GetMediaAsync(int rawgGameId, CancellationToken ct = default)
+{
+    var screenshots = new List<string>();
+    var trailers    = new List<TrailerDto>();
+
+    // --- Screenshots: GET /games/{id}/screenshots ---
+    var ssUrl = $"{_baseUrl.TrimEnd('/')}/games/{rawgGameId}/screenshots?key={Uri.EscapeDataString(_apiKey)}&page_size=40";
+    while (!string.IsNullOrWhiteSpace(ssUrl))
     {
-        throw new NotImplementedException();
+        ct.ThrowIfCancellationRequested();
+
+        using var resp = await _http.GetAsync(ssUrl, ct);
+        var body = await resp.Content.ReadAsStringAsync(ct);
+        if (!resp.IsSuccessStatusCode)
+            throw new HttpRequestException($"RAWG {resp.StatusCode} for {ssUrl}. Body: {body}");
+
+        var page = System.Text.Json.JsonSerializer.Deserialize<RawgScreenshotsResponse>(
+            body, new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+
+        if (page?.results != null)
+        {
+            foreach (var s in page.results)
+                if (!string.IsNullOrWhiteSpace(s.image))
+                    screenshots.Add(s.image);
+        }
+
+        ssUrl = page?.next; // RAWG absolute verir; direkt kullan
     }
+
+    // --- Trailers/Movies: GET /games/{id}/movies ---
+    var mvUrl = $"{_baseUrl.TrimEnd('/')}/games/{rawgGameId}/movies?key={Uri.EscapeDataString(_apiKey)}&page_size=40";
+    while (!string.IsNullOrWhiteSpace(mvUrl))
+    {
+        ct.ThrowIfCancellationRequested();
+
+        using var resp = await _http.GetAsync(mvUrl, ct);
+        var body = await resp.Content.ReadAsStringAsync(ct);
+        if (!resp.IsSuccessStatusCode)
+            throw new HttpRequestException($"RAWG {resp.StatusCode} for {mvUrl}. Body: {body}");
+
+        var page = System.Text.Json.JsonSerializer.Deserialize<RawgMoviesResponse>(
+            body, new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+
+        if (page?.results != null)
+        {
+            foreach (var m in page.results)
+            {
+                var url = m?.data?.max ?? m?.data?._480; // en yüksek kaliteyi tercih et
+                if (string.IsNullOrWhiteSpace(url)) continue;
+
+                trailers.Add(new TrailerDto
+                {
+                    Platform  = "RAWG",
+                    Url       = url,        // MP4 link (YouTube değil)
+                    YouTubeId = null
+                });
+            }
+        }
+
+        mvUrl = page?.next;
+    }
+
+    // --- uniq/de-dup ---
+    screenshots = screenshots
+        .Where(u => !string.IsNullOrWhiteSpace(u))
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .ToList();
+
+    trailers = trailers
+        .Where(t => !string.IsNullOrWhiteSpace(t.YouTubeId) || !string.IsNullOrWhiteSpace(t.Url))
+        .GroupBy(t => (t.YouTubeId ?? t.Url)!.Trim(), StringComparer.OrdinalIgnoreCase)
+        .Select(g => g.First())
+        .ToList();
+
+    return (screenshots, trailers);
+}
+
+// --- RAWG response modelleri ---
+private sealed class RawgScreenshotsResponse
+{
+    public int count { get; set; }
+    public string? next { get; set; }
+    public string? previous { get; set; }
+    public List<RawgScreenshotRow> results { get; set; } = new();
+}
+private sealed class RawgScreenshotRow
+{
+    public int id { get; set; }
+    public string? image { get; set; }
+    public int width { get; set; }
+    public int height { get; set; }
+}
+
+private sealed class RawgMoviesResponse
+{
+    public int count { get; set; }
+    public string? next { get; set; }
+    public List<RawgMovieRow> results { get; set; } = new();
+}
+private sealed class RawgMovieRow
+{
+    public int id { get; set; }
+    public string? name { get; set; }
+    public string? preview { get; set; }
+    public RawgMovieData data { get; set; } = new();
+}
+private sealed class RawgMovieData
+{
+    [System.Text.Json.Serialization.JsonPropertyName("480")] public string? _480 { get; set; }
+    [System.Text.Json.Serialization.JsonPropertyName("max")] public string? max { get; set; }
+}
+
 }

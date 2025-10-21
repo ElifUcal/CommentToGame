@@ -361,6 +361,14 @@ public class AdminController : ControllerBase
             TimeToBeat_Hastily = details?.TimeToBeat_Hastily,
             TimeToBeat_Normally = details?.TimeToBeat_Normally,
             TimeToBeat_Completely = details?.TimeToBeat_Completely,
+            GameDirector = details?.GameDirector,
+            Writers = details?.ScenarioWriters,
+            ArtDirector = details?.ArtDirector,
+            LeadActors = details?.LeadActors,
+            VoiceActors = details?.VoiceActors,
+            MusicComposer = details?.MusicComposer,
+            CinematicsVfxTeam = details?.Cinematics_VfxTeam,
+
 
             MinRequirements = minText,
             RecRequirements = recText,

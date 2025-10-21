@@ -22,7 +22,8 @@ public interface IRawgClient
     // IRawgClient.cs
     Task<List<StoreLink>> GetStoreLinksAsync(int id, CancellationToken ct = default);
 
-    
+    Task<(List<string> screenshots, List<TrailerDto> trailers)> GetMediaAsync(int rawgGameId, CancellationToken ct = default);
+
 
 
 }
