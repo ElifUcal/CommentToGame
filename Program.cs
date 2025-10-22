@@ -7,6 +7,7 @@ using Microsoft.OpenApi.Models;
 using System.Security.Claims;
 using System.Text;
 using System.Text.Json.Serialization;
+using Microsoft.AspNetCore.HttpOverrides;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -95,23 +96,38 @@ builder.Services.AddSwaggerGen(o =>
     o.CustomSchemaIds(t => (t.FullName ?? t.Name).Replace("+", "."));
 });
 
+
+
 // CORS ------------- (BUILD'DEN ÖNCE!)
-const string CorsPolicy = "DevCors";
+const string CorsPolicy = "GGDBCors";
+string[] allowedOrigins =
+    builder.Configuration.GetSection("Cors:Allowed").Get<string[]>() ??
+    new[]
+    {
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "https://localhost:3000",
+        // Vercel prod domainin: bunu Render/Vercel çıktına göre düzelt
+        "https://*.vercel.app"
+    };
 builder.Services.AddCors(opt =>
 {
     opt.AddPolicy(CorsPolicy, policy =>
     {
-        policy
-            .WithOrigins(
-                "http://localhost:3000",
-                "http://127.0.0.1:3000",
-                "https://localhost:3000"
-            )
-            .AllowAnyHeader()
-            .AllowAnyMethod()
-            .AllowCredentials();
+        policy.WithOrigins(allowedOrigins)
+               .AllowAnyHeader()
+               .AllowAnyMethod()
+               .AllowCredentials();
     });
 });
+
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+});
+
+var port = Environment.GetEnvironmentVariable("PORT") ?? "8080";
+builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
 
 // ----- BUILD -----
 var app = builder.Build();
@@ -125,7 +141,7 @@ if (app.Environment.IsDevelopment())
 
 // Geliştirmede http kullanacaksan bu satırı yoruma al:
 // app.UseHttpsRedirection();
-
+app.UseForwardedHeaders();
 app.UseCors(CorsPolicy);
 
 app.UseAuthentication();
@@ -134,6 +150,9 @@ app.UseAuthentication();
 app.UseMiddleware<CommentToGame.Middleware.ExceptionLoggingMiddleware>();
 
 app.UseAuthorization();
+
+app.MapGet("/health", () => Results.Ok(new { ok = true, env = app.Environment.EnvironmentName }));
+
 
 // ❌ Seed DEMO çağrısı YOK; gerçek loglar gelecek.
 
