@@ -1,0 +1,10 @@
+bin
+obj
+.git
+.gitignore
+.vscode
+.local
+node_modules
+**/*.user
+**/*.swp
+**/*.log
