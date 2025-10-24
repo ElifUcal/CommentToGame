@@ -274,7 +274,7 @@ public class AdminController : ControllerBase
     }
 
     [HttpGet("games/{id}")]
-    [Authorize(Roles = "Admin")]
+    
     public async Task<ActionResult<GameDetailDto>> GetGameById(string id, CancellationToken ct)
     {
         var game = await _games.Find(g => g.Id == id).FirstOrDefaultAsync(ct);
@@ -346,6 +346,7 @@ public class AdminController : ControllerBase
             MetacriticRating = game.Metacritic_Rating,
             Cover = game.Main_image_URL,
             Video = game.Main_video_URL,
+            Cast = game.Cast,
 
             Developer = details?.Developer,
             Publisher = details?.Publisher,
@@ -358,9 +359,20 @@ public class AdminController : ControllerBase
             Awards = details?.Awards,
             GameEngine = details?.Engines ?? new List<string>(),
 
+
             TimeToBeat_Hastily = details?.TimeToBeat_Hastily,
             TimeToBeat_Normally = details?.TimeToBeat_Normally,
             TimeToBeat_Completely = details?.TimeToBeat_Completely,
+            GameDirector = details?.GameDirector,
+            Writers = details?.ScenarioWriters,
+            ArtDirector = details?.ArtDirector,
+            LeadActors = details?.LeadActors,
+            VoiceActors = details?.VoiceActors,
+            MusicComposer = details?.MusicComposer,
+            CinematicsVfxTeam = details?.Cinematics_VfxTeam,
+            Franchise = details?.Franchise,
+            Director = details?.Director,
+            InspiredBy = details?.InspiredBy,
 
             MinRequirements = minText,
             RecRequirements = recText,

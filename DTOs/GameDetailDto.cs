@@ -15,6 +15,8 @@ public class GameDetailDto
     public string? Cover { get; set; }
     public string? Video { get; set; }
 
+    public List<string> Cast { get; set; } = new();
+
     // Game_Details
     public string? Developer { get; set; }
     public string? Publisher { get; set; }
@@ -53,6 +55,7 @@ public class GameDetailDto
     public int? TimeToBeat_Completely { get; set; }
 
     public string? GameDirector { get; set; }
+    public string? Director { get; set; }
     public List<string>? Writers { get; set; }           // ScenarioWriters
     public string? ArtDirector { get; set; }
     public List<string>? LeadActors { get; set; }
@@ -63,6 +66,11 @@ public class GameDetailDto
     public ImageDto? Featured_Section_Background { get; set; }
    public ImageDto? Poster_Image { get; set; }
    public VideoDto? Poster_Video { get; set; }
+
+    public string? Franchise { get; set; }
+
+    public string? InspiredBy { get; set; }
+
 
 }
 
