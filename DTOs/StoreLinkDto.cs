@@ -8,5 +8,6 @@ namespace CommentToGame.DTOs
         public string? Domain     { get; set; }
         public string? Url        { get; set; }
         public string? ExternalId { get; set; }
+        public double? Price { get; set; }
     }
 }

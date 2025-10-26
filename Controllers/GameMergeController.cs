@@ -16,6 +16,7 @@ using CommentToGame.Models;
 
 // IGDB nested tiplerini kısayla kullanmak için:
 using static CommentToGame.DTOs.IGdbDto;
+using Microsoft.Win32.SafeHandles;
 
 namespace CommentToGame.Controllers
 {
@@ -309,7 +310,8 @@ namespace CommentToGame.Controllers
                     Slug = slug,
                     Domain = domain,
                     Url = url,
-                    ExternalId = externalId
+                    ExternalId = externalId,
+                    Price = null,
                 });
             }
 

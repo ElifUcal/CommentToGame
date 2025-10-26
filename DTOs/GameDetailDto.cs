@@ -27,7 +27,7 @@ public class GameDetailDto
     public List<string> Dlcs { get; set; } = new();
     public List<string> Crew { get; set; } = new();
     public List<string>? Awards { get; set; }
-    public List<string> GameEngine { get; set; } = new();
+    public List<string> Engines { get; set; } = new();
 
     public string? MinRequirements { get; set; }
     public string? RecRequirements { get; set; }

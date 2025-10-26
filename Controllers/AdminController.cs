@@ -357,7 +357,7 @@ public class AdminController : ControllerBase
             Dlcs = details?.DLCs ?? new List<string>(),
             Crew = game.Crew,
             Awards = details?.Awards,
-            GameEngine = details?.Engines ?? new List<string>(),
+            Engines = details?.Engines ?? new List<string>(),
 
 
             TimeToBeat_Hastily = details?.TimeToBeat_Hastily,
@@ -394,7 +394,9 @@ public class AdminController : ControllerBase
                     Slug = s.Slug,
                     Domain = s.Domain,
                     Url = s.Url,
-                    ExternalId = s.ExternalId
+                    ExternalId = s.ExternalId,
+                    Price = s.Price,
+
                 })
                 .ToList(),
 
@@ -431,6 +433,7 @@ public class AdminController : ControllerBase
             game.Main_video_URL = dto.Video;
             game.Crew = dto.Crew ?? new List<string>();
             game.Soundtrack = dto.Soundtrack ?? new List<string>();
+            game.Cast = dto.Cast ?? new List<string>();
 
             if (dto.Featured_Section_Background != null)
                 game.Featured_Section_Background = MapImageDto(dto.Featured_Section_Background, game.Featured_Section_Background);
@@ -450,7 +453,10 @@ public class AdminController : ControllerBase
             details.Tags = dto.Tags ?? new List<string>();
             details.DLCs = dto.Dlcs ?? new List<string>();
             details.Awards = dto.Awards;
-            details.Engines = dto.GameEngine ?? new List<string>();
+            details.Engines = dto.Engines ?? new List<string>();
+            details.Franchise = dto.Franchise;         
+            details.Director  = dto.Director;           
+            details.InspiredBy= dto.InspiredBy; 
 
             if (dto.GameDirector != null) details.GameDirector = NormStr(dto.GameDirector);
             if (dto.Writers != null) details.ScenarioWriters = NormList(dto.Writers);
@@ -605,7 +611,8 @@ public class AdminController : ControllerBase
                    Slug = s.Slug ?? "",
                    Domain = s.Domain ?? "",
                    Url = s.Url ?? "",
-                   ExternalId = s.ExternalId
+                   ExternalId = s.ExternalId,
+                   Price = s.Price,
                })
                .ToList();
 

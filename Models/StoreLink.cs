@@ -12,4 +12,6 @@ public class StoreLink
     public string? Domain { get; set; }     // "store.steampowered.com"
     public string? Url { get; set; }        // tam mağaza adresi
     public string? ExternalId { get; set; } // örn: Steam AppID
+
+    public double? Price { get; set; }
 }
