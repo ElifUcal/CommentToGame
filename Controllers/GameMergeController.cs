@@ -91,7 +91,21 @@ namespace CommentToGame.Controllers
             var (cast, crew) = SplitCastCrew(team);
 
             var (igdbScreens, igdbTrailers) = await _igdb.GetMediaAsync(igdbId, ct);
+            var (rawgScreens, rawgTrailers) = await _rawg.GetMediaAsync(rawgId, ct);
 
+         var mergedScreens = igdbScreens
+    .Concat(rawgScreens)
+    .Where(u => !string.IsNullOrWhiteSpace(u))
+    .Distinct(StringComparer.OrdinalIgnoreCase)
+    .ToList();
+
+    // 2) Trailers: uniq key = YouTubeId ?? Url
+    var mergedTrailers = igdbTrailers
+    .Concat(rawgTrailers)
+    .Where(t => !string.IsNullOrWhiteSpace(t.YouTubeId) || !string.IsNullOrWhiteSpace(t.Url))
+    .GroupBy(t => (t.YouTubeId ?? t.Url)!.Trim(), StringComparer.OrdinalIgnoreCase)
+    .Select(g => g.First())
+    .ToList();
 
             var merged = GameMerge.Merge(
                 igdbGame,
@@ -101,7 +115,7 @@ namespace CommentToGame.Controllers
                 cast,
                 crew,
                 igdbDlcs: dlcNames,
-                igdbScreenshots: igdbScreens,
+                igdbScreenshots: mergedScreens,
                 igdbTrailers: igdbTrailers
             );
 

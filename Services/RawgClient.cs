@@ -87,103 +87,215 @@ public class RawgClient : IRawgClient
     }
 
     public async Task<List<StoreLink>> GetStoreLinksAsync(int id, CancellationToken ct = default)
-{
-    var page = await GetGameStoresAsync(id); // mevcut metodun
-    var links = new List<StoreLink>();
-
-    foreach (var s in page?.Results ?? new List<RawgGameStoreItem>())
     {
-        var urlStr = s.Url;
-        if (string.IsNullOrWhiteSpace(urlStr)) continue;
+        var page = await GetGameStoresAsync(id); // mevcut metodun
+        var links = new List<StoreLink>();
 
-        var link = new StoreLink
+        foreach (var s in page?.Results ?? new List<RawgGameStoreItem>())
         {
-            StoreId = s.Store?.Id ?? s.StoreId,
-            Store   = s.Store?.Name,
-            Slug    = s.Store?.Slug,
-            Domain  = s.Store?.Domain,
-            Url     = urlStr
-        };
+            var urlStr = s.Url;
+            if (string.IsNullOrWhiteSpace(urlStr)) continue;
 
-        // Domain yoksa URL'den üret
-        if (string.IsNullOrWhiteSpace(link.Domain) && Uri.TryCreate(urlStr, UriKind.Absolute, out var u))
-            link.Domain = u.Host;
+            var link = new StoreLink
+            {
+                StoreId = s.Store?.Id ?? s.StoreId,
+                Store = s.Store?.Name,
+                Slug = s.Store?.Slug,
+                Domain = s.Store?.Domain,
+                Url = urlStr
+            };
 
-        // --- Normalize & ExternalId çıkar ---
-        // Steam
-        var mSteam = Regex.Match(urlStr, @"store\.steampowered\.com/app/(\d+)", RegexOptions.IgnoreCase);
-        if (mSteam.Success)
-        {
-            link.Store = "Steam"; link.Slug = "steam"; link.Domain = "store.steampowered.com";
-            link.ExternalId = mSteam.Groups[1].Value;
+            // Domain yoksa URL'den üret
+            if (string.IsNullOrWhiteSpace(link.Domain) && Uri.TryCreate(urlStr, UriKind.Absolute, out var u))
+                link.Domain = u.Host;
+
+            // --- Normalize & ExternalId çıkar ---
+            // Steam
+            var mSteam = Regex.Match(urlStr, @"store\.steampowered\.com/app/(\d+)", RegexOptions.IgnoreCase);
+            if (mSteam.Success)
+            {
+                link.Store = "Steam"; link.Slug = "steam"; link.Domain = "store.steampowered.com";
+                link.ExternalId = mSteam.Groups[1].Value;
+            }
+
+            // PlayStation (concept id)
+            var mPsn = Regex.Match(urlStr, @"store\.playstation\.com/.*/concept/(\d+)", RegexOptions.IgnoreCase);
+            if (mPsn.Success)
+            {
+                link.Store = "PlayStation Store"; link.Slug = "playstation-store"; link.Domain = "store.playstation.com";
+                link.ExternalId = mPsn.Groups[1].Value;
+            }
+
+            // Xbox yeni mağaza (12 haneli ürün kodu)
+            var mXbox = Regex.Match(urlStr, @"xbox\.com/.*/store/.*/([A-Z0-9]{12})", RegexOptions.IgnoreCase);
+            if (mXbox.Success)
+            {
+                link.Store = "Xbox Store"; link.Slug = "xbox-store"; link.Domain = "www.xbox.com";
+                link.ExternalId = mXbox.Groups[1].Value;
+            }
+
+            // Eski marketplace GUID
+            var mXboxOld = Regex.Match(urlStr, @"marketplace\.xbox\.com/.*/Product/.*/([0-9a-f]{8}-[0-9a-f\-]{27})", RegexOptions.IgnoreCase);
+            if (mXboxOld.Success)
+            {
+                link.Store = "Xbox Store"; link.Slug = "xbox-store"; link.Domain = "marketplace.xbox.com";
+                link.ExternalId = mXboxOld.Groups[1].Value;
+            }
+
+            // Epic
+            var mEpic = Regex.Match(urlStr, @"epicgames\.com/.*/store/.*/p/([a-z0-9\-]+)", RegexOptions.IgnoreCase);
+            if (mEpic.Success)
+            {
+                link.Store = "Epic Games Store"; link.Slug = "epic-games"; link.Domain = "store.epicgames.com";
+                link.ExternalId = mEpic.Groups[1].Value;
+            }
+
+            // GOG
+            var mGog = Regex.Match(urlStr, @"gog\.com/game/([a-z0-9\_]+)", RegexOptions.IgnoreCase);
+            if (mGog.Success)
+            {
+                link.Store = "GOG"; link.Slug = "gog"; link.Domain = "www.gog.com";
+                link.ExternalId = mGog.Groups[1].Value;
+            }
+
+            // Nintendo eShop
+            if (link.Domain?.Contains("nintendo.com", StringComparison.OrdinalIgnoreCase) == true)
+            {
+                link.Store = "Nintendo eShop"; link.Slug = "nintendo-eshop"; link.Domain = "www.nintendo.com";
+            }
+
+            links.Add(link);
         }
 
-        // PlayStation (concept id)
-        var mPsn = Regex.Match(urlStr, @"store\.playstation\.com/.*/concept/(\d+)", RegexOptions.IgnoreCase);
-        if (mPsn.Success)
-        {
-            link.Store = "PlayStation Store"; link.Slug = "playstation-store"; link.Domain = "store.playstation.com";
-            link.ExternalId = mPsn.Groups[1].Value;
-        }
-
-        // Xbox yeni mağaza (12 haneli ürün kodu)
-        var mXbox = Regex.Match(urlStr, @"xbox\.com/.*/store/.*/([A-Z0-9]{12})", RegexOptions.IgnoreCase);
-        if (mXbox.Success)
-        {
-            link.Store = "Xbox Store"; link.Slug = "xbox-store"; link.Domain = "www.xbox.com";
-            link.ExternalId = mXbox.Groups[1].Value;
-        }
-
-        // Eski marketplace GUID
-        var mXboxOld = Regex.Match(urlStr, @"marketplace\.xbox\.com/.*/Product/.*/([0-9a-f]{8}-[0-9a-f\-]{27})", RegexOptions.IgnoreCase);
-        if (mXboxOld.Success)
-        {
-            link.Store = "Xbox Store"; link.Slug = "xbox-store"; link.Domain = "marketplace.xbox.com";
-            link.ExternalId = mXboxOld.Groups[1].Value;
-        }
-
-        // Epic
-        var mEpic = Regex.Match(urlStr, @"epicgames\.com/.*/store/.*/p/([a-z0-9\-]+)", RegexOptions.IgnoreCase);
-        if (mEpic.Success)
-        {
-            link.Store = "Epic Games Store"; link.Slug = "epic-games"; link.Domain = "store.epicgames.com";
-            link.ExternalId = mEpic.Groups[1].Value;
-        }
-
-        // GOG
-        var mGog = Regex.Match(urlStr, @"gog\.com/game/([a-z0-9\_]+)", RegexOptions.IgnoreCase);
-        if (mGog.Success)
-        {
-            link.Store = "GOG"; link.Slug = "gog"; link.Domain = "www.gog.com";
-            link.ExternalId = mGog.Groups[1].Value;
-        }
-
-        // Nintendo eShop
-        if (link.Domain?.Contains("nintendo.com", StringComparison.OrdinalIgnoreCase) == true)
-        {
-            link.Store = "Nintendo eShop"; link.Slug = "nintendo-eshop"; link.Domain = "www.nintendo.com";
-        }
-
-        links.Add(link);
+        // Basit dedupe: ExternalId varsa (Store+ExternalId) benzersiz, yoksa Url’e göre
+        return links
+          .GroupBy(l => !string.IsNullOrWhiteSpace(l.ExternalId)
+                         ? $"{l.Store}|{l.ExternalId}"
+                         : $"url|{l.Url}",
+                   StringComparer.OrdinalIgnoreCase)
+          .Select(g => g.First())
+          .ToList();
     }
-
-    // Basit dedupe: ExternalId varsa (Store+ExternalId) benzersiz, yoksa Url’e göre
-    return links
-      .GroupBy(l => !string.IsNullOrWhiteSpace(l.ExternalId)
-                     ? $"{l.Store}|{l.ExternalId}"
-                     : $"url|{l.Url}",
-               StringComparer.OrdinalIgnoreCase)
-      .Select(g => g.First())
-      .ToList();
-}
 
     public Task<(int Id, string? Name)> ResolveGameAsync(string slugOrId, CancellationToken ct = default)
     {
         throw new NotImplementedException();
     }
 
-    public Task<(List<string> screenshots, List<TrailerDto> trailers)> GetMediaAsync(int id, CancellationToken ct = default)
+
+
+    public async Task<(List<string> screenshots, List<TrailerDto> trailers)>
+GetMediaAsync(int rawgGameId, CancellationToken ct = default)
     {
-        throw new NotImplementedException();
+        var screenshots = new List<string>();
+        var trailers = new List<TrailerDto>();
+
+        // --- Screenshots: GET /games/{id}/screenshots ---
+        var ssUrl = $"{_baseUrl.TrimEnd('/')}/games/{rawgGameId}/screenshots?key={Uri.EscapeDataString(_apiKey)}&page_size=40";
+        while (!string.IsNullOrWhiteSpace(ssUrl))
+        {
+            ct.ThrowIfCancellationRequested();
+
+            using var resp = await _http.GetAsync(ssUrl, ct);
+            var body = await resp.Content.ReadAsStringAsync(ct);
+            if (!resp.IsSuccessStatusCode)
+                throw new HttpRequestException($"RAWG {resp.StatusCode} for {ssUrl}. Body: {body}");
+
+            var page = System.Text.Json.JsonSerializer.Deserialize<RawgScreenshotsResponse>(
+                body, new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+
+            if (page?.results != null)
+            {
+                foreach (var s in page.results)
+                    if (!string.IsNullOrWhiteSpace(s.image))
+                        screenshots.Add(s.image);
+            }
+
+            ssUrl = page?.next; // RAWG absolute verir; direkt kullan
+        }
+
+        // --- Trailers/Movies: GET /games/{id}/movies ---
+        var mvUrl = $"{_baseUrl.TrimEnd('/')}/games/{rawgGameId}/movies?key={Uri.EscapeDataString(_apiKey)}&page_size=40";
+        while (!string.IsNullOrWhiteSpace(mvUrl))
+        {
+            ct.ThrowIfCancellationRequested();
+
+            using var resp = await _http.GetAsync(mvUrl, ct);
+            var body = await resp.Content.ReadAsStringAsync(ct);
+            if (!resp.IsSuccessStatusCode)
+                throw new HttpRequestException($"RAWG {resp.StatusCode} for {mvUrl}. Body: {body}");
+
+            var page = System.Text.Json.JsonSerializer.Deserialize<RawgMoviesResponse>(
+                body, new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+
+            if (page?.results != null)
+            {
+                foreach (var m in page.results)
+                {
+                    var url = m?.data?.max ?? m?.data?._480; // en yüksek kaliteyi tercih et
+                    if (string.IsNullOrWhiteSpace(url)) continue;
+
+                    trailers.Add(new TrailerDto
+                    {
+                        Platform = "RAWG",
+                        Url = url,        // MP4 link (YouTube değil)
+                        YouTubeId = null
+                    });
+                }
+            }
+
+            mvUrl = page?.next;
+        }
+
+        // --- uniq/de-dup ---
+        screenshots = screenshots
+            .Where(u => !string.IsNullOrWhiteSpace(u))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        trailers = trailers
+            .Where(t => !string.IsNullOrWhiteSpace(t.YouTubeId) || !string.IsNullOrWhiteSpace(t.Url))
+            .GroupBy(t => (t.YouTubeId ?? t.Url)!.Trim(), StringComparer.OrdinalIgnoreCase)
+            .Select(g => g.First())
+            .ToList();
+
+        return (screenshots, trailers);
     }
+
+// --- RAWG response modelleri ---
+private sealed class RawgScreenshotsResponse
+{
+    public int count { get; set; }
+    public string? next { get; set; }
+    public string? previous { get; set; }
+    public List<RawgScreenshotRow> results { get; set; } = new();
+}
+private sealed class RawgScreenshotRow
+{
+    public int id { get; set; }
+    public string? image { get; set; }
+    public int width { get; set; }
+    public int height { get; set; }
+}
+
+private sealed class RawgMoviesResponse
+{
+    public int count { get; set; }
+    public string? next { get; set; }
+    public List<RawgMovieRow> results { get; set; } = new();
+}
+private sealed class RawgMovieRow
+{
+    public int id { get; set; }
+    public string? name { get; set; }
+    public string? preview { get; set; }
+    public RawgMovieData data { get; set; } = new();
+}
+private sealed class RawgMovieData
+{
+    [System.Text.Json.Serialization.JsonPropertyName("480")] public string? _480 { get; set; }
+    [System.Text.Json.Serialization.JsonPropertyName("max")] public string? max { get; set; }
+}
+
+
 }
