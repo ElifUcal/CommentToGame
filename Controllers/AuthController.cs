@@ -75,6 +75,11 @@ public class AuthController : ControllerBase
         if (user is null)
             return BadRequest("Kullanıcı bulunamadı.");
 
+        if(user.isBanned == true)
+        {
+            return BadRequest("Hesabınız askıya alınmıştır.");
+        }
+
         if (!BCrypt.Net.BCrypt.Verify(request.Password, user.PasswordHash))
             return BadRequest("Şifre yanlış.");
 
