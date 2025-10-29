@@ -9,6 +9,7 @@ using CommentToGame.Models;
 using Microsoft.IdentityModel.Tokens;
 using MongoDB.Driver;
 using Microsoft.AspNetCore.Authorization;
+using CommentToGame.DTOs;
 
 namespace CommentToGame.Controllers;
 
@@ -64,38 +65,41 @@ public class AuthController : ControllerBase
         return Ok("Kayıt başarılı.");
     }
 
-    [HttpPost("login")]
-    public async Task<IActionResult> Login([FromBody] LoginDto request)
-    {
-        if (request is null || string.IsNullOrWhiteSpace(request.UserName) || string.IsNullOrWhiteSpace(request.Password))
-            return BadRequest("Kullanıcı adı ve şifre zorunludur.");
-        
 
-        var user = await _users.Find(u => u.UserName == request.UserName).FirstOrDefaultAsync();
-        if (user is null)
-            return BadRequest("Kullanıcı bulunamadı.");
+[HttpPost("login")]
+public async Task<IActionResult> Login([FromBody] LoginDto request)
+{
+    if (request is null || string.IsNullOrWhiteSpace(request.UserName) || string.IsNullOrWhiteSpace(request.Password))
+        return BadRequest("Kullanıcı adı/email ve şifre zorunludur.");
 
-        if(user.isBanned == true)
-        {
-            return BadRequest("Hesabınız askıya alınmıştır.");
-        }
+    var ident = request.UserName.Trim();
+    var identLower = ident.ToLowerInvariant();
 
-        if (!BCrypt.Net.BCrypt.Verify(request.Password, user.PasswordHash))
-            return BadRequest("Şifre yanlış.");
+    // Hem username hem email ile arama
+    var user = await _users.Find(u => u.UserName == ident || u.Email == identLower).FirstOrDefaultAsync();
+    if (user is null)
+        return BadRequest("Kullanıcı bulunamadı.");
 
-        var token = CreateToken(user);
-        var refresh = GenerateRefreshToken();
+    if (user.isBanned)
+        return BadRequest("Hesabınız askıya alınmıştır.");
 
-        int rDays = int.TryParse(_config["Jwt:RefreshTokenExpireDays"], out var rr) ? rr : 7;
+    if (!BCrypt.Net.BCrypt.Verify(request.Password, user.PasswordHash))
+        return BadRequest("Şifre yanlış.");
 
-        var update = Builders<User>.Update
-            .Set(u => u.RefreshToken, refresh)
-            .Set(u => u.RefreshTokenExpiryTime, DateTime.UtcNow.AddDays(rDays));
+    var token = CreateToken(user);
+    var refresh = GenerateRefreshToken();
 
-        await _users.UpdateOneAsync(u => u.Id == user.Id, update);
+    int rDays = int.TryParse(_config["Jwt:RefreshTokenExpireDays"], out var rr) ? rr : 7;
 
-        return Ok(new { token, refreshToken = refresh });
-    }
+    var update = Builders<User>.Update
+        .Set(u => u.RefreshToken, refresh)
+        .Set(u => u.RefreshTokenExpiryTime, DateTime.UtcNow.AddDays(rDays));
+
+    await _users.UpdateOneAsync(u => u.Id == user.Id, update);
+
+    return Ok(new { token, refreshToken = refresh });
+}
+
 
     [HttpGet("check-email")]
     public async Task<IActionResult> CheckEmail([FromQuery] string email)
