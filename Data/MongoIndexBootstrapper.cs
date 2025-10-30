@@ -19,40 +19,35 @@ public static class MongoIndexBootstrapper
         var platforms    = db.GetCollection<Platform>("Platforms");
         var companies    = db.GetCollection<Company>("Companies");
         var timeToBeat   = db.GetCollection<Time_To_Beat>("TimeToBeat");
-        var users      = db.GetCollection<User>("User");
+        var users        = db.GetCollection<User>("User");
+        var reviews      = db.GetCollection<Reviews>("Reviews");   // ✅ YENİ EKLENDİ
 
         // Case-insensitive unique için collation (EN, strength: Secondary)
         var ci = new Collation("en", strength: CollationStrength.Secondary);
 
         var tasks = new List<Task>
         {
-
-
+            // --- USER INDEXES ---
             users.Indexes.CreateOneAsync(
-            new CreateIndexModel<User>(
-                Builders<User>.IndexKeys.Ascending(u => u.Email),
-                new CreateIndexOptions { Name = "ux_users_email", Unique = true, Collation = ci }
-            )
-        ),
+                new CreateIndexModel<User>(
+                    Builders<User>.IndexKeys.Ascending(u => u.Email),
+                    new CreateIndexOptions { Name = "ux_users_email", Unique = true, Collation = ci }
+                )
+            ),
+            users.Indexes.CreateOneAsync(
+                new CreateIndexModel<User>(
+                    Builders<User>.IndexKeys.Ascending(u => u.UserName),
+                    new CreateIndexOptions { Name = "ux_users_username", Unique = true, Collation = ci }
+                )
+            ),
+            users.Indexes.CreateOneAsync(
+                new CreateIndexModel<User>(
+                    Builders<User>.IndexKeys.Ascending(u => u.RefreshToken),
+                    new CreateIndexOptions { Name = "ix_users_refreshtoken" }
+                )
+            ),
 
-        // Users(UserName) UNIQUE — kullanıcı adında da tekrar olmasın
-        users.Indexes.CreateOneAsync(
-            new CreateIndexModel<User>(
-                Builders<User>.IndexKeys.Ascending(u => u.UserName),
-                new CreateIndexOptions { Name = "ux_users_username", Unique = true, Collation = ci }
-            )
-        ),
-
-        // (Öneri) Users(RefreshToken) — refresh akışında hızlı lookup
-        users.Indexes.CreateOneAsync(
-            new CreateIndexModel<User>(
-                Builders<User>.IndexKeys.Ascending(u => u.RefreshToken),
-                new CreateIndexOptions { Name = "ix_users_refreshtoken" }
-            )
-        ),
-
-
-            // Games(Game_Name) UNIQUE (case-insensitive)
+            // --- GAME INDEXES ---
             games.Indexes.CreateOneAsync(
                 new CreateIndexModel<Game>(
                     Builders<Game>.IndexKeys.Ascending(x => x.Game_Name),
@@ -60,7 +55,6 @@ public static class MongoIndexBootstrapper
                 )
             ),
 
-            // GameDetails(GameId) — hızlı lookup
             details.Indexes.CreateOneAsync(
                 new CreateIndexModel<Game_Details>(
                     Builders<Game_Details>.IndexKeys.Ascending(x => x.GameId),
@@ -68,7 +62,6 @@ public static class MongoIndexBootstrapper
                 )
             ),
 
-            // Galleries(GameId) — oyuna göre galeri çekimi
             galleries.Indexes.CreateOneAsync(
                 new CreateIndexModel<Gallery>(
                     Builders<Gallery>.IndexKeys.Ascending(x => x.GameId),
@@ -76,7 +69,6 @@ public static class MongoIndexBootstrapper
                 )
             ),
 
-            // Genres(Name) UNIQUE (case-insensitive)
             genres.Indexes.CreateOneAsync(
                 new CreateIndexModel<Genre>(
                     Builders<Genre>.IndexKeys.Ascending(x => x.Name),
@@ -84,7 +76,6 @@ public static class MongoIndexBootstrapper
                 )
             ),
 
-            // Platforms(Name) UNIQUE (case-insensitive)
             platforms.Indexes.CreateOneAsync(
                 new CreateIndexModel<Platform>(
                     Builders<Platform>.IndexKeys.Ascending(x => x.Name),
@@ -92,7 +83,6 @@ public static class MongoIndexBootstrapper
                 )
             ),
 
-            // Companies(Company_Name) UNIQUE (case-insensitive) — aynı şirket tekrar eklenmesin
             companies.Indexes.CreateOneAsync(
                 new CreateIndexModel<Company>(
                     Builders<Company>.IndexKeys.Ascending(x => x.Company_Name),
@@ -100,11 +90,24 @@ public static class MongoIndexBootstrapper
                 )
             ),
 
-            // TimeToBeat(GameId) — her oyuna 1 kayıt varsayımıyla UNIQUE (istersen Unique=false yap)
             timeToBeat.Indexes.CreateOneAsync(
                 new CreateIndexModel<Time_To_Beat>(
                     Builders<Time_To_Beat>.IndexKeys.Ascending(x => x.GameId),
                     new CreateIndexOptions { Name = "ux_timetoBeat_gameid", Unique = true }
+                )
+            ),
+
+            // --- ✅ REVIEWS INDEX (YENİ EKLENDİ) ---
+            reviews.Indexes.CreateOneAsync(
+                new CreateIndexModel<Reviews>(
+                    Builders<Reviews>.IndexKeys
+                        .Ascending(x => x.GameId)
+                        .Ascending(x => x.UserId),
+                    new CreateIndexOptions
+                    {
+                        Name = "ux_reviews_game_user",
+                        Unique = true
+                    }
                 )
             )
         };

@@ -119,26 +119,47 @@ namespace CommentToGame.Controllers;
 
         // POST /api/reviews
         [HttpPost]
-        public async Task<ActionResult<Reviews>> Create([FromBody] ReviewCreateDto dto, CancellationToken ct = default)
-        {
-            if (!ObjectId.TryParse(dto.GameId, out _)) return BadRequest("Invalid GameId.");
-            if (!ObjectId.TryParse(dto.UserId, out _)) return BadRequest("Invalid UserId.");
-            if (!IsValidStar(dto.StarCount)) return BadRequest("StarCount must be between 1 and 5.");
+public async Task<ActionResult<Reviews>> Create([FromBody] ReviewCreateDto dto, CancellationToken ct = default)
+{
+    if (!ObjectId.TryParse(dto.GameId, out _)) return BadRequest("Invalid GameId.");
+    if (!ObjectId.TryParse(dto.UserId, out _)) return BadRequest("Invalid UserId.");
+    if (!IsValidStar(dto.StarCount)) return BadRequest("StarCount must be between 1 and 5.");
 
-            var entity = new Reviews
-            {
-                Id = ObjectId.GenerateNewId().ToString(),
-                GameId = dto.GameId,
-                UserId = dto.UserId,
-                StarCount = dto.StarCount,
-                Comment = string.IsNullOrWhiteSpace(dto.Comment) ? null : dto.Comment!.Trim(),
-                isSpoiler = dto.IsSpoiler
-            };
+    var trimmed = string.IsNullOrWhiteSpace(dto.Comment) ? null : dto.Comment!.Trim();
+    if (trimmed != null && trimmed.Length > 500)
+        return BadRequest("Comment must be ≤ 500 characters.");
 
-            await _reviews.InsertOneAsync(entity, cancellationToken: ct);
+    // Aynı kullanıcı + aynı oyun için tek kayıt kuralı
+    var filter = Builders<Reviews>.Filter.Eq(x => x.GameId, dto.GameId) &
+                 Builders<Reviews>.Filter.Eq(x => x.UserId, dto.UserId);
 
-            return CreatedAtAction(nameof(GetById), new { id = entity.Id }, entity);
-        }
+    // Varsa aynı dokümanın Id’sini koruyarak replace edelim
+    var existing = await _reviews.Find(filter).FirstOrDefaultAsync(ct);
+
+    var entity = new Reviews
+    {
+        Id = existing?.Id ?? ObjectId.GenerateNewId().ToString(),
+        GameId = dto.GameId,
+        UserId = dto.UserId,
+        StarCount = dto.StarCount,
+        Comment = trimmed,
+        isSpoiler = dto.IsSpoiler
+    };
+
+    var options = new ReplaceOptions { IsUpsert = true };
+    var result = await _reviews.ReplaceOneAsync(filter, entity, options, ct);
+
+    // Eğer yeni oluşturulduysa 201, aksi halde 200 dönelim
+    if (existing == null && result.UpsertedId != null)
+    {
+        return CreatedAtAction(nameof(GetById), new { id = entity.Id }, entity);
+    }
+    else
+    {
+        return Ok(entity);
+    }
+}
+
 
         // PUT /api/reviews/{id}
         // Not: PUT'ı "tam güncelleme" yerine pratik bir şekilde "kısmi" gibi kullandım.
