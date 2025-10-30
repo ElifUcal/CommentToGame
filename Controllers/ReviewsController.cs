@@ -190,41 +190,37 @@ namespace CommentToGame.Controllers;
             return NoContent();
         }
 
-     [HttpGet("stats/{gameId}")]
+   [HttpGet("stats/{gameId}")]
 public async Task<ActionResult<ReviewStatsDto>> GetStats(string gameId, CancellationToken ct = default)
 {
-    if (!ObjectId.TryParse(gameId, out var oid)) return BadRequest("Invalid gameId.");
+    if (!ObjectId.TryParse(gameId, out _)) return BadRequest("Invalid gameId.");
 
-    var match = new BsonDocument("$match", new BsonDocument("GameId", oid));
-    var group = new BsonDocument("$group", new BsonDocument
+    var pipeline = new[]
     {
-        { "_id", "$StarCount" },
-        { "count", new BsonDocument("$sum", 1) }
-    });
+        new BsonDocument("$match", new BsonDocument("GameId", gameId)), // <-- string eşleşme
+        new BsonDocument("$group", new BsonDocument {
+            { "_id", "$StarCount" },
+            { "count", new BsonDocument("$sum", 1) }
+        })
+    };
 
-    var pipeline = new[] { match, group };
     var buckets = await _reviews.Aggregate<BsonDocument>(pipeline, cancellationToken: ct).ToListAsync(ct);
 
-    var counts = new Dictionary<int, int>();
+    var counts = new Dictionary<int,int>();
     int total = 0, sum = 0;
-
     foreach (var b in buckets)
     {
         var star = b["_id"].AsInt32;
         var cnt  = b["count"].AsInt32;
-        counts[star] = cnt;
-        total += cnt;
-        sum   += star * cnt;
+        counts[star] = cnt; total += cnt; sum += star * cnt;
     }
 
-    var dto = new ReviewStatsDto
-    {
+    var dto = new ReviewStatsDto {
         GameId = gameId,
         Total = total,
         Average = total > 0 ? Math.Round((double)sum / total, 2) : 0.0,
-        Distribution = Enumerable.Range(1, 5).ToDictionary(i => i, i => counts.TryGetValue(i, out var c) ? c : 0)
+        Distribution = Enumerable.Range(1,5).ToDictionary(i => i, i => counts.TryGetValue(i, out var c) ? c : 0)
     };
-
     return Ok(dto);
 }
 

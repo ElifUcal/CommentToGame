@@ -189,6 +189,7 @@ public async Task<IActionResult> Login([FromBody] LoginDto request)
 
             return Ok(new
             {
+                id = user.Id,   
                 userName = user.UserName,
                 email = user.Email,
                 role = user.UserType.ToString(),

@@ -659,6 +659,27 @@ public class AdminController : ControllerBase
         return Ok(userDtos);
     }
 
+    [HttpGet("getuserbyid")]
+    
+    public async Task<ActionResult<List<UserDto>>> GetUserById(string id,CancellationToken ct)
+    {
+        var users = await _users.Find(u => u.Id == id).ToListAsync(ct);
+        var userDtos = users.Select(u => new UserDto
+        {
+            Id = u.Id,
+            UserName = u.UserName,
+            Email = u.Email,
+            Password = string.Empty,
+            Birthdate = u.Birthdate,
+            Country = u.Country,
+            ProfileImageUrl = u.ProfileImageUrl,
+            UserType = u.UserType,
+            isBanned = u.isBanned
+        }).ToList();
+
+        return Ok(userDtos);
+    }
+
     [HttpDelete("deleteUser/{id}")]
     [Authorize(Roles = "Admin")]
     public async Task<IActionResult> DeleteUser(string id, CancellationToken ct)
