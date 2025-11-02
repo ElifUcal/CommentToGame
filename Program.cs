@@ -10,6 +10,11 @@ using System.Text.Json.Serialization;
 
 var builder = WebApplication.CreateBuilder(args);
 
+builder.Logging.ClearProviders();
+builder.Logging.AddConsole();
+builder.Logging.SetMinimumLevel(LogLevel.Debug);
+
+
 // ----- SERVICES -----
 builder.Services.AddSingleton<MongoDbService>();
 builder.Services.AddSingleton<PreviewImportService>();
@@ -113,8 +118,15 @@ builder.Services.AddCors(opt =>
     });
 });
 
+
+
 // ----- BUILD -----
 var app = builder.Build();
+
+if (app.Environment.IsDevelopment())
+{
+    app.UseDeveloperExceptionPage(); // <- ekle
+}
 
 // ----- MIDDLEWARE -----
 if (app.Environment.IsDevelopment())

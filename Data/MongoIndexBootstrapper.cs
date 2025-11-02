@@ -110,7 +110,10 @@ public static class MongoIndexBootstrapper
                     }
                 )
             )
+
+
         };
+        
 
         await Task.WhenAll(tasks);
     }
