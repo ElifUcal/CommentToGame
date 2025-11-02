@@ -40,7 +40,7 @@ namespace CommentToGame.Services
             public string? About { get; set; }
 
             public List<string> AgeRatings { get; set; } = new();
-            public List<string> Dlcs { get; set; } = new();
+            public List<DlcItemDto> Dlcs { get; set; } = new();
             public List<string> Tags { get; set; } = new();
             public List<string> Genres { get; set; } = new();
             public List<string> Platforms { get; set; } = new();
@@ -85,6 +85,12 @@ namespace CommentToGame.Services
 
 
         }
+
+         public sealed class DlcItemDto
+    {
+        public required string Name { get; set; }
+        public double? Price { get; set; }  // hep null döneceğiz
+    }
 
         public sealed class ImageDto
         {
@@ -131,8 +137,13 @@ namespace CommentToGame.Services
             if (dto.AgeRatings.Count == 0)
                 dto.AgeRatings = BuildRawgAgeRatings(rawg);
 
-            dto.Dlcs = igdbDlcs?.WhereNotEmpty().Distinct().ToList() ?? new List<string>();
+            dto.Dlcs = (igdbDlcs ?? Enumerable.Empty<string>())
+            .WhereNotEmpty()
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Select(name => new DlcItemDto { Name = name.Trim(), Price = null }) // fiyatı boş bırak
+            .ToList();
 
+            
             dto.Tags = (igdb?.Tags ?? Enumerable.Empty<string>()).WhereNotEmpty().Distinct().ToList();
             if (dto.Tags.Count == 0 && rawg?.Tags != null)
                 dto.Tags = rawg.Tags.Select(t => t.Name).WhereNotEmpty().Distinct().ToList();

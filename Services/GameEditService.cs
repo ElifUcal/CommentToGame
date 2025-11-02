@@ -72,7 +72,25 @@ public sealed class GameEditService
 
         // listeler (null => dokunma empty => temizle)
         if (body.AgeRatings != null)      dUpdates.Add(D.Set(x => x.Age_Ratings, body.AgeRatings.Distinct().ToList()));
-        if (body.Dlcs != null)            dUpdates.Add(D.Set(x => x.DLCs, body.Dlcs.Distinct().ToList()));
+        if (body.Dlcs != null)
+        {
+            // Eğer frontend sadece string listesi gönderiyorsa, bunu DLCitem'e dönüştür
+            var mappedDlcs = body.Dlcs
+                .Select(d =>
+                {
+                    if (d is DLCitem dlcObj) return new DLCitem { Name = dlcObj.Name, Price = dlcObj.Price };
+                    // fallback: string ise
+                    return new DLCitem { Name = d?.ToString(), Price = null };
+                })
+                .Where(x => !string.IsNullOrWhiteSpace(x.Name))
+                .GroupBy(x => x.Name!.Trim(), StringComparer.OrdinalIgnoreCase)
+                .Select(g => new DLCitem { Name = g.Key.Trim(), Price = g.First().Price })
+                .ToList();
+
+            dUpdates.Add(D.Set(x => x.DLCs, mappedDlcs));
+        }
+
+
         if (body.Tags != null)            dUpdates.Add(D.Set(x => x.Tags, body.Tags.Distinct().ToList()));
         if (body.AudioLanguages != null)  dUpdates.Add(D.Set(x => x.Audio_Language, body.AudioLanguages.Distinct().ToList()));
         if (body.Subtitles != null)       dUpdates.Add(D.Set(x => x.Subtitles, body.Subtitles.Distinct().ToList()));

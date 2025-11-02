@@ -188,23 +188,55 @@ public class IgdbImportService
             // IGDB sistem gereksinimi sağlamadığı için Min/Rec null bırakılır.
         await _details.UpdateOneAsync(detFilter, detUpdate, new UpdateOptions { IsUpsert = true }, ct);
 
-            // (opsiyonel) DLC/Additions (varsa)
-            try
-            {
-                var additions = await _igdb.GetGameAdditionsAsync(detail.Id, ct);
-                var dlcNames = additions?.Results?
-                    .Select(a => a.Name)
-                    .Where(n => !string.IsNullOrWhiteSpace(n))
-                    .Distinct()
-                    .ToList() ?? new List<string>();
+        // (opsiyonel) DLC/Additions (varsa)  → DLCitem'e çevir ve mevcut fiyatları koru
+        try
+        {
+            var additions = await _igdb.GetGameAdditionsAsync(detail.Id, ct);
+            var dlcNames = additions?.Results?
+                .Select(a => a?.Name?.Trim())
+                .Where(n => !string.IsNullOrWhiteSpace(n))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList() ?? new List<string?>();
 
-                var dlcUpdate = Builders<Game_Details>.Update.Set(x => x.DLCs, dlcNames);
-                await _details.UpdateOneAsync(detFilter, dlcUpdate, new UpdateOptions { IsUpsert = true }, ct);
-            }
-            catch
-            {
-                // yoksay
-            }
+            // Mevcut kayıttaki DLC'leri çek (varsa fiyatları korumak için)
+            var currentDetails = await _details
+                .Find(detFilter)
+                .Project(x => new { x.DLCs })
+                .FirstOrDefaultAsync(ct);
+
+            var existingByName = (currentDetails?.DLCs ?? new List<DLCitem>())
+                .Where(d => !string.IsNullOrWhiteSpace(d.Name))
+                .GroupBy(d => d.Name!.Trim(), StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+
+            // Yeni IGDB DLC listesi → DLCitem
+            var mapped = dlcNames
+                .GroupBy(n => n!, StringComparer.OrdinalIgnoreCase)
+                .Select(g =>
+                {
+                    var name = g.Key;
+                    // Mevcutta varsa fiyatı koru, yoksa boş bırak
+                    if (existingByName.TryGetValue(name, out var ex))
+                        return new DLCitem { Name = name, Price = ex.Price };
+
+                    return new DLCitem { Name = name, Price = null };
+                })
+                .ToList();
+
+            await _details.UpdateOneAsync(
+                detFilter,
+                Builders<Game_Details>.Update.Set(x => x.DLCs, mapped),
+                new UpdateOptions { IsUpsert = true },
+                ct
+            );
+        }
+        catch
+        {
+            // yoksay
+        }
+
+
+
         }
 
 

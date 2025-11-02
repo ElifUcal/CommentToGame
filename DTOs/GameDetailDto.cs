@@ -24,7 +24,7 @@ public class GameDetailDto
     public List<string> Platforms { get; set; } = new();
     public string? Story { get; set; }
     public List<string> Tags { get; set; } = new();
-    public List<string> Dlcs { get; set; } = new();
+    public List<DLCitem> Dlcs { get; set; } = new();
     public List<string> Crew { get; set; } = new();
     public List<string>? Awards { get; set; }
     public List<string> Engines { get; set; } = new();
@@ -64,14 +64,20 @@ public class GameDetailDto
     public List<string>? CinematicsVfxTeam { get; set; }
 
     public ImageDto? Featured_Section_Background { get; set; }
-   public ImageDto? Poster_Image { get; set; }
-   public VideoDto? Poster_Video { get; set; }
+    public ImageDto? Poster_Image { get; set; }
+    public VideoDto? Poster_Video { get; set; }
 
     public string? Franchise { get; set; }
 
     public string? InspiredBy { get; set; }
 
 
+}
+
+public sealed class DlcItemDto
+{
+    public string? Name { get; set; }
+    public double? Price { get; set; }
 }
 
 

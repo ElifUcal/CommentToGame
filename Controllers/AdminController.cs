@@ -354,7 +354,7 @@ public class AdminController : ControllerBase
             Platforms = platformNames,
             Story = details?.Story,
             Tags = details?.Tags ?? new List<string>(),
-            Dlcs = details?.DLCs ?? new List<string>(),
+            Dlcs = details?.DLCs ?? new List<DLCitem>(),
             Crew = game.Crew,
             Awards = details?.Awards,
             Engines = details?.Engines ?? new List<string>(),
@@ -451,7 +451,7 @@ public class AdminController : ControllerBase
             details.Publisher = dto.Publisher;
             details.Story = dto.Story;
             details.Tags = dto.Tags ?? new List<string>();
-            details.DLCs = dto.Dlcs ?? new List<string>();
+            details.DLCs = dto.Dlcs ?? new List<DLCitem>();
             details.Awards = dto.Awards;
             details.Engines = dto.Engines ?? new List<string>();
             details.Franchise = dto.Franchise;         

@@ -127,7 +127,7 @@ public class PreviewImportService
             ub.Set(x => x.Subtitles, dto.Subtitles ?? new List<string>()),
             ub.Set(x => x.Interface_Language, dto.InterfaceLanguages ?? new List<string>()),
             ub.Set(x => x.Content_Warnings, dto.ContentWarnings ?? new List<string>()),
-            ub.Set(x => x.DLCs, dto.Dlcs ?? new List<string>()),
+
             ub.SetOnInsert(x => x.GameId, game.Id),
             ub.SetOnInsert(x => x.Id, ObjectId.GenerateNewId().ToString()),
 
@@ -139,8 +139,45 @@ public class PreviewImportService
             ub.SetOnInsert(x => x.VoiceActors,             new List<string>()),
             ub.SetOnInsert(x => x.MusicComposer,           ""),
             ub.SetOnInsert(x => x.Cinematics_VfxTeam,      new List<string>()),
-            
+
         };
+
+        // DLCs: dto.Dlcs (List<DlcItemDto>) -> List<DLCitem>, mevcut fiyatı koru
+if (dto.Dlcs != null) // null ise hiç dokunma; boş [] gelirse temizle
+{
+    // Mevcut detaydan DLC'leri çek (fiyat korumak için)
+    var currentDlcBox = await _details
+        .Find(detFilter)
+        .Project(d => new { d.DLCs })
+        .FirstOrDefaultAsync(ct);
+
+    var existingByName = (currentDlcBox?.DLCs ?? new List<DLCitem>())
+        .Where(d => !string.IsNullOrWhiteSpace(d.Name))
+        .GroupBy(d => d.Name!.Trim(), StringComparer.OrdinalIgnoreCase)
+        .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+
+    // gelen dto.Dlcs: List<GameMerge.DlcItemDto>
+    var mappedDlcItems = dto.Dlcs
+        .Where(d => d != null && !string.IsNullOrWhiteSpace(d.Name))
+        .GroupBy(d => d.Name!.Trim(), StringComparer.OrdinalIgnoreCase) // aynı isimleri tekle
+        .Select(g =>
+        {
+            var name = g.Key;
+            var first = g.First();
+            // önce mevcut DB fiyatı, yoksa dto fiyatı, o da yoksa null
+            double? priceToKeep = existingByName.TryGetValue(name, out var ex) && ex.Price.HasValue
+                ? ex.Price
+                : first.Price;
+
+            return new DLCitem { Name = name, Price = priceToKeep };
+        })
+        .ToList();
+
+    updates.Add(ub.Set(x => x.DLCs, mappedDlcItems));
+}
+
+
+
         
 
         if (dto.Awards is { Count: > 0 })

@@ -296,19 +296,19 @@ crewNames.AddRange(detail.Publishers?.Select(p => p.Name) ?? Enumerable.Empty<st
 
 
         var detUpdate = Builders<Game_Details>.Update
-        .Set(x => x.Developer, detail.Developers.FirstOrDefault()?.Name)
-        .Set(x => x.Publisher, detail.Publishers.FirstOrDefault()?.Name)
+        .Set(x => x.Developer, detail?.Developers?.FirstOrDefault()?.Name)
+        .Set(x => x.Publisher, detail?.Publishers?.FirstOrDefault()?.Name)
         .Set(x => x.GenreIds, genreIds)
         .Set(x => x.PlatformIds, platformIds)
-        .Set(x => x.Story, detail.DescriptionRaw)              // About
+        .Set(x => x.Story, detail?.DescriptionRaw)              // About
         .Set(x => x.Age_Ratings, ageRatingNames)
         .Set(x => x.Tags, tagNames)
         .Set(x => x.Engines, engineNames)
-        .Set(x => x.TimeToBeat_Normally, detail.Playtime)      // NEW
-        .Set(x => x.Audio_Language, detail.LanguagesAudio ?? new List<string>())
-        .Set(x => x.Subtitles, detail.LanguagesSubtitles ?? new List<string>())
-        .Set(x => x.Interface_Language, detail.Languages ?? new List<string>())
-        .Set(x => x.Content_Warnings, detail.ContentWarnings ?? new List<string>())
+        .Set(x => x.TimeToBeat_Normally, detail?.Playtime)      // NEW
+        .Set(x => x.Audio_Language, detail?.LanguagesAudio ?? new List<string>())
+        .Set(x => x.Subtitles, detail?.LanguagesSubtitles ?? new List<string>())
+        .Set(x => x.Interface_Language, detail?.Languages ?? new List<string>())
+        .Set(x => x.Content_Warnings, detail?.ContentWarnings ?? new List<string>())
 
         .SetOnInsert(x => x.GameId, gameFromDb.Id)
         .SetOnInsert(x => x.Id, ObjectId.GenerateNewId().ToString());
@@ -351,7 +351,7 @@ var awardsFromTags = tagNames
 // (opsiyonel) Description’dan da tarayalım (About/Story)
 // Çok gürültü olmasın diye kısa bir çıkarım yapıyoruz:
 var awardsFromStory = new List<string>();
-if (!string.IsNullOrWhiteSpace(detail.DescriptionRaw))
+if (!string.IsNullOrWhiteSpace(detail?.DescriptionRaw))
 {
     var story = detail.DescriptionRaw!;
     if (story.IndexOf("Game of the Year", StringComparison.OrdinalIgnoreCase) >= 0)
@@ -374,30 +374,60 @@ if (!string.IsNullOrWhiteSpace(detail.DescriptionRaw))
         // detUpdate oluştururken:
         detUpdate = detUpdate
             .Set(x => x.Awards, awardsFinal);
-            
 
 
-    
+
+
 
 
 
 
         // (opsiyonel) Series: isim listesini DLCs ya da Tags içine basabiliriz
+        // (opsiyonel) RAWG additions → DLCitem'e çevir ve mevcut fiyatları koru
         try
         {
             var additions = await _rawg.GetGameAdditionsAsync(detail.Id);
             var dlcNames = additions?.Results?
-                .Select(a => a.Name)
+                .Select(a => a?.Name?.Trim())
                 .Where(n => !string.IsNullOrWhiteSpace(n))
-                .Distinct()
-                .ToList() ?? new List<string>();
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList() ?? new List<string?>();
 
-            detUpdate = detUpdate.Set(x => x.DLCs, dlcNames);
+            // Mevcut Game_Details kaydından DLC'leri çek → fiyatları korumak için
+            var currentDetails = await _details
+                .Find(detFilter)
+                .Project(x => new { x.DLCs })
+                .FirstOrDefaultAsync();
+
+            var existingByName = (currentDetails?.DLCs ?? new List<DLCitem>())
+                .Where(d => !string.IsNullOrWhiteSpace(d.Name))
+                .GroupBy(d => d.Name!.Trim(), StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+
+            // Yeni RAWG DLC isimlerini DLCitem'e map et
+            var mapped = dlcNames
+                .GroupBy(n => n!, StringComparer.OrdinalIgnoreCase)
+                .Select(g =>
+                {
+                    var name = g.Key;
+                    // Mevcutta varsa fiyatı koru, yoksa null bırak
+                    if (existingByName.TryGetValue(name, out var ex))
+                        return new DLCitem { Name = name, Price = ex.Price };
+
+                    return new DLCitem { Name = name, Price = null };
+                })
+                .ToList();
+
+            detUpdate = detUpdate.Set(x => x.DLCs, mapped);
         }
         catch
         {
-            detUpdate = detUpdate.Set(x => x.DLCs, new List<string>());
+            // API başarısızsa DLC'leri değiştirme (mevcudu koru)
+            // İstersen burada: detUpdate = detUpdate.Set(x => x.DLCs, new List<DLCitem>()); da diyebilirsin,
+            // ama mevcut veriyi korumak genelde daha iyidir.
         }
+
+
 
         try
         {

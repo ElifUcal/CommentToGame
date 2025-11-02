@@ -1,3 +1,5 @@
+using CommentToGame.Models;
+
 namespace CommentToGame.DTOs
 {
     public sealed class UpdateGameDto
@@ -16,7 +18,8 @@ namespace CommentToGame.DTOs
 
         // İsim listeleri
         public List<string>? AgeRatings { get; set; }
-        public List<string>? Dlcs { get; set; }
+        public List<DLCitem>? Dlcs { get; set; }
+
         public List<string>? Tags { get; set; }
         public List<string>? Genres { get; set; }
         public List<string>? Platforms { get; set; }

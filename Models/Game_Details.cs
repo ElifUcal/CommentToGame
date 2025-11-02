@@ -38,7 +38,7 @@ public class Game_Details
 
     public List<string> Tags { get; set; } = new();
     public List<string>? Awards { get; set; }
-    public List<string> DLCs { get; set; } = new();
+    public List<DLCitem> DLCs { get; set; } = new();
     public string? InspiredBy { get; set; }
 
     public List<string> Audio_Language { get; set; } = new();
@@ -84,4 +84,10 @@ public class Game_Details
     public List<string>? Cinematics_VfxTeam { get; set; }
 
 
+}
+
+public class DLCitem
+{
+    public string? Name { get; set; }
+    public double? Price { get; set; }
 }
