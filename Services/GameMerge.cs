@@ -133,9 +133,8 @@ namespace CommentToGame.Services
             dto.Publisher = FirstNonEmpty(igdb?.Publishers?.FirstOrDefault(), rawg?.Publishers?.FirstOrDefault()?.Name);
             dto.About = FirstNonEmpty(igdb?.Summary, rawg?.DescriptionRaw);
 
-            dto.AgeRatings = (igdb?.AgeRatings ?? Enumerable.Empty<string>()).WhereNotEmpty().Distinct().ToList();
-            if (dto.AgeRatings.Count == 0)
-                dto.AgeRatings = BuildRawgAgeRatings(rawg);
+            dto.AgeRatings       = ToDistinctList(igdb?.AgeRatings);
+            if (dto.AgeRatings.Count == 0) dto.AgeRatings = BuildRawgAgeRatings(rawg);
 
             dto.Dlcs = (igdbDlcs ?? Enumerable.Empty<string>())
             .WhereNotEmpty()
@@ -144,18 +143,14 @@ namespace CommentToGame.Services
             .ToList();
 
             
-            dto.Tags = (igdb?.Tags ?? Enumerable.Empty<string>()).WhereNotEmpty().Distinct().ToList();
-            if (dto.Tags.Count == 0 && rawg?.Tags != null)
-                dto.Tags = rawg.Tags.Select(t => t.Name).WhereNotEmpty().Distinct().ToList();
+            dto.Tags             = ToDistinctList(igdb?.Tags);
+            if (dto.Tags.Count == 0 && rawg?.Tags is not null) dto.Tags = ToDistinctList(rawg.Tags.Select(t => t.Name));
 
-            dto.Genres = (igdb?.Genres ?? Enumerable.Empty<string>()).WhereNotEmpty().Distinct().ToList();
-            if (dto.Genres.Count == 0 && rawg?.Genres != null)
-                dto.Genres = rawg.Genres.Select(g => g.Name).WhereNotEmpty().Distinct().ToList();
+            dto.Genres           = ToDistinctList(igdb?.Genres);
+            if (dto.Genres.Count == 0 && rawg?.Genres is not null) dto.Genres = ToDistinctList(rawg.Genres.Select(g => g.Name));
 
-            dto.Platforms = (igdb?.Platforms ?? Enumerable.Empty<string>()).WhereNotEmpty().Distinct().ToList();
-            if (dto.Platforms.Count == 0 && rawg?.Platforms != null)
-                dto.Platforms = rawg.Platforms.Select(p => p.Platform?.Name).WhereNotEmpty().Distinct().ToList();
-
+            dto.Platforms        = ToDistinctList(igdb?.Platforms);
+            if (dto.Platforms.Count == 0 && rawg?.Platforms is not null) dto.Platforms = ToDistinctList(rawg.Platforms.Select(p => p.Platform.Name));
             // PC gereksinimleri
 var pc = rawg?.Platforms?.FirstOrDefault(p =>
 {
@@ -178,10 +173,10 @@ if (pc?.Requirements != null)
         dto.RecRequirement = new RequirementInput { Text = recText };
 }
 
-            dto.AudioLanguages = (igdb?.AudioLanguages ?? Enumerable.Empty<string>()).WhereNotEmpty().Distinct().ToList();
-            dto.Subtitles = (igdb?.Subtitles ?? Enumerable.Empty<string>()).WhereNotEmpty().Distinct().ToList();
-            dto.InterfaceLanguages = (igdb?.InterfaceLanguages ?? Enumerable.Empty<string>()).WhereNotEmpty().Distinct().ToList();
-            dto.ContentWarnings = (igdb?.ContentWarnings ?? Enumerable.Empty<string>()).WhereNotEmpty().Distinct().ToList();
+           dto.AudioLanguages   = ToDistinctList(igdb?.AudioLanguages);
+           dto.Subtitles        = ToDistinctList(igdb?.Subtitles);
+           dto.InterfaceLanguages = ToDistinctList(igdb?.InterfaceLanguages);
+           dto.ContentWarnings  = ToDistinctList(igdb?.ContentWarnings);
 
             dto.StoreLinks = storeLinks ?? new List<StoreLink>();
 
@@ -198,20 +193,25 @@ if (pc?.Requirements != null)
             dto.Engines = (igdb?.Engines ?? Enumerable.Empty<string>()).WhereNotEmpty().Distinct().ToList();
             dto.Awards = (igdb?.Awards ?? Enumerable.Empty<string>()).WhereNotEmpty().Distinct().ToList();
 
-            if (rawgCast != null) dto.Cast = rawgCast.WhereNotEmpty().Distinct().ToList();
-            if (rawgCrew != null) dto.Crew = rawgCrew.WhereNotEmpty().Distinct().ToList();
+            if (rawgCast  is not null) dto.Cast = ToDistinctList(rawgCast);
+            if (rawgCrew  is not null) dto.Crew = ToDistinctList(rawgCrew);
 
             // --- IMAGES: Screenshot 1, 2, ... başlıklarıyla doldur
-            var images = (igdbScreenshots ?? Enumerable.Empty<string>())
-                .Where(u => !string.IsNullOrWhiteSpace(u))
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .Select((u, i) => new ImageDto
+            var images = new List<ImageDto>(capacity: (igdbScreenshots?.Count() ?? 0) + 2);
+            if (igdbScreenshots is not null)
+            {
+                int i = 1;
+                foreach (var u in igdbScreenshots)
                 {
-                    Url = u,
-                    Title = $"Screenshot {i + 1}",
-                    MetaDatas = new List<MetaData>() // şimdilik boş
-                })
-                .ToList();
+                    if (string.IsNullOrWhiteSpace(u)) continue;
+                    images.Add(new ImageDto
+                    {
+                        Url = u,
+                        Title = $"Screenshot {i++}",
+                        MetaDatas = new List<MetaData>()
+                    });
+                }
+            }
 
             // --- VIDEOS: Trailer 1, 2, ...; YouTube id varsa kısa url üret
             string ToVideoUrl(TrailerDto t)
@@ -221,55 +221,60 @@ if (pc?.Requirements != null)
                 return t.Url ?? "";
             }
 
-            var videos = (igdbTrailers ?? Enumerable.Empty<TrailerDto>())
-                .Where(t => !string.IsNullOrWhiteSpace(t?.Url) || !string.IsNullOrWhiteSpace(t?.YouTubeId))
-                .GroupBy(t => string.IsNullOrWhiteSpace(t!.YouTubeId) ? ("url:" + t!.Url) : ("yt:" + t!.YouTubeId),
-                        StringComparer.OrdinalIgnoreCase)
-                .Select(g => g.First())
-                .Select((t, i) => new VideoDto
-                {
-                    Url = ToVideoUrl(t),
-                    YouTubeId = string.IsNullOrWhiteSpace(t.YouTubeId) ? null : t.YouTubeId,
-                    Title = $"Trailer {i + 1}",
-                    MetaDatas = new List<MetaData>() // şimdilik boş
-                })
-                .ToList();
+           var videos = new List<VideoDto>();
+if (igdbTrailers is not null)
+{
+    int i = 1;
+    foreach (var t in igdbTrailers)
+    {
+        if (t is null) continue;
+        if (string.IsNullOrWhiteSpace(t.Url) && string.IsNullOrWhiteSpace(t.YouTubeId)) continue;
 
-            var mainImageUrl = dto.MainImage;
-            if (!string.IsNullOrWhiteSpace(mainImageUrl))
-            {
-                var alreadyExists = images.Any(i =>
-                    string.Equals(i.Url, mainImageUrl, StringComparison.OrdinalIgnoreCase));
+        videos.Add(new VideoDto {
+            Url = MapVideoUrl(t),
+            YouTubeId = string.IsNullOrWhiteSpace(t.YouTubeId) ? null : t.YouTubeId,
+            Title = $"Trailer {i++}",
+            MetaDatas = new List<MetaData>()
+        });
+    }
+}
 
-                if (!alreadyExists)
-                {
-                    images.Insert(0, new ImageDto
-                    {
-                        Url = mainImageUrl,
-                        Title = "Main Image",
-                        MetaDatas = new List<MetaData> {
-                new MetaData { Label = "Type", Value = "Main" }
-            }
-                    });
-                }
-                else
-                {
-                    // Varsa ama sona düşmüşse, başa al ve adını "Main Image" yap
-                    var idx = images.FindIndex(i => string.Equals(i.Url, mainImageUrl, StringComparison.OrdinalIgnoreCase));
-                    if (idx > 0)
-                    {
-                        var main = images[idx];
-                        main.Title = "Main Image";
-                        images.RemoveAt(idx);
-                        images.Insert(0, main);
-                    }
-                    else
-                    {
-                        // zaten 0. sıradaysa sadece başlığını güncelle
-                        images[0].Title = "Main Image";
-                    }
-                }
-            }
+            // MainImage'ı başa taşı/ekle
+var mainImageUrl = dto.MainImage;
+if (!string.IsNullOrWhiteSpace(mainImageUrl))
+{
+    int foundIdx = -1;
+    for (int i = 0; i < images.Count; i++)
+    {
+        if (string.Equals(images[i].Url, mainImageUrl, StringComparison.OrdinalIgnoreCase))
+        {
+            foundIdx = i; break;
+        }
+    }
+
+    if (foundIdx == -1)
+    {
+        images.Insert(0, new ImageDto {
+            Url = mainImageUrl,
+            Title = "Main Image",
+            MetaDatas = new List<MetaData>{ new MetaData{ Label="Type", Value="Main"} }
+        });
+    }
+    else if (foundIdx > 0)
+    {
+        var img = images[foundIdx];
+        img.Title = "Main Image";
+        images.RemoveAt(foundIdx);
+        images.Insert(0, img);
+    }
+    else
+    {
+        images[0].Title = "Main Image";
+    }
+}
+           
+
+
 
 
 
@@ -337,6 +342,20 @@ if (pc?.Requirements != null)
 
             return dto;
         }
+
+        private static List<string> ToDistinctList(IEnumerable<string>? src)
+        {
+            if (src is null) return new();
+            var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var s in src)
+                if (!string.IsNullOrWhiteSpace(s)) set.Add(s.Trim());
+            return set.ToList();
+        }
+
+
+        private static string MapVideoUrl(TrailerDto t)
+    => string.IsNullOrWhiteSpace(t.YouTubeId) ? (t.Url ?? "") : $"https://youtu.be/{t.YouTubeId}";
+
 
         // ---------- helpers ----------
 

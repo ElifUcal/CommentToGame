@@ -109,9 +109,31 @@ public static class MongoIndexBootstrapper
                         Unique = true
                     }
                 )
-            )
+            ),
 
+            // --- REVIEWS PERFORMANCE INDEXES ---
+    reviews.Indexes.CreateOneAsync(
+        new CreateIndexModel<Reviews>(
+            Builders<Reviews>.IndexKeys.Ascending(x => x.GameId),
+            new CreateIndexOptions { Name = "ix_reviews_gameid" }
+        )
+    ),
+    reviews.Indexes.CreateOneAsync(
+        new CreateIndexModel<Reviews>(
+            Builders<Reviews>.IndexKeys.Descending(x => x.TodayDate),
+            new CreateIndexOptions { Name = "ix_reviews_createdat" }
+        )
+    ),
+    reviews.Indexes.CreateOneAsync(
+        new CreateIndexModel<Reviews>(
+            Builders<Reviews>.IndexKeys
+                .Ascending(x => x.GameId)
+                .Descending(x => x.TodayDate),
+            new CreateIndexOptions { Name = "ix_reviews_gameid_createdat" }
+        )
+    )
 
+        
         };
         
 

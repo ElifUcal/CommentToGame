@@ -32,20 +32,38 @@ public sealed class IgdbClient : IIgdbClient
     { _http = http; _auth = auth; }
 
     // ------------------------- Low-level POST helper -------------------------
-    private async Task<T[]> PostAsync<T>(string endpoint, string igdbQuery, CancellationToken ct)
+   private async Task<T[]> PostAsync<T>(string endpoint, string igdbQuery, CancellationToken ct)
     {
-        var http = _http.CreateClient();
-        using var req = new HttpRequestMessage(HttpMethod.Post, $"https://api.igdb.com/v4/{endpoint}")
-        {
-            Content = new StringContent(igdbQuery, Encoding.UTF8, "text/plain")
-        };
-        await _auth.AddAuthAsync(req, ct);
-        using var resp = await http.SendAsync(req, ct);
-        resp.EnsureSuccessStatusCode();
-        using var stream = await resp.Content.ReadAsStreamAsync(ct);
-        var data = await JsonSerializer.DeserializeAsync<T[]>(stream, _json, ct);
-        return data ?? Array.Empty<T>();
-    }
+    
+    
+    var http = _http.CreateClient();
+    using var req = new HttpRequestMessage(HttpMethod.Post, $"https://api.igdb.com/v4/{endpoint}")
+    { Content = new StringContent(igdbQuery, Encoding.UTF8, "text/plain") };
+    await _auth.AddAuthAsync(req, ct);
+
+    using var resp = await http.SendAsync(req, ct);
+    var body = await resp.Content.ReadAsStringAsync(ct);
+    
+
+    if (!resp.IsSuccessStatusCode)
+        throw new InvalidOperationException($"IGDB/{endpoint} {(int)resp.StatusCode}: {body}\nQuery: {igdbQuery}");
+
+    // DEBUG: ilgili endpointleri yaz
+    if (endpoint is "age_ratings"
+    or "age_rating_organizations"
+    or "age_rating_categories"
+    or "age_rating_content_descriptions"
+    or "age_rating_content_descriptions_v2") // <-- eklendi
+{
+    Console.WriteLine($"[IGDB DEBUG] {endpoint} OK: {body}");
+}
+
+
+    return JsonSerializer.Deserialize<T[]>(body, _json) ?? Array.Empty<T>();
+}
+
+
+
 
     // ------------------------- Public API (IIgdbClient) -------------------------
     public async Task<IgdbPagedGames> GetGamesAsync(int page, int pageSize, CancellationToken ct = default)
@@ -74,12 +92,12 @@ public sealed class IgdbClient : IIgdbClient
         var safe = query.Replace("\"", "\\\"");
 
         // gamesten alt alanları doğrudan getiriyoruz (cover.image_id, platforms.name, category)
-          var rows = await PostAsync<GameRowSearch>(
-        "games",
-        $@"fields id,name,first_release_date,category,cover.image_id,platforms.name;
+        var rows = await PostAsync<GameRowSearch>(
+      "games",
+      $@"fields id,name,first_release_date,category,cover.image_id,platforms.name;
            where name ~ ""{safe}""*;
            limit {pageSize}; offset {offset};",
-        ct);
+      ct);
 
         var items = rows.Select(r =>
         {
@@ -113,198 +131,198 @@ public sealed class IgdbClient : IIgdbClient
     }
 
     public async Task<IgdbPagedGames> SearchGamesSmartAsync(string query, int page, int pageSize, CancellationToken ct = default)
-{
-    if (string.IsNullOrWhiteSpace(query)) query = "";
-    if (page <= 0) page = 1;
-    if (pageSize <= 0) pageSize = 40;
-
-    var offset = (page - 1) * pageSize;
-    var safe   = query.Replace("\"", "\\\"");
-    var toks   = Tokens(query);
-
-    // --- normalize & slug (™, ®, noktalama vs. toleransı için)
-    var normQ  = NormalizeName(query);
-    var slugQ  = SlugifyStrict(query);
-
-    // === PRE-FLIGHT A: slug ile ana oyun
-    var exactBySlug = await PostAsync<GameRowSearch>(
-        "games",
-        $@"fields id,name,first_release_date,category,cover.image_id,platforms.name,parent_game,version_parent,slug;
-           where slug = ""{slugQ}"" & category = 0 & parent_game = null & version_parent = null;
-           limit 1;",
-        ct);
-
-    // === PRE-FLIGHT B: name ~ "query"* ile ana oyun (™ farkı için ‘=’ yerine ‘~’)
-    var exactByNameLoose = await PostAsync<GameRowSearch>(
-        "games",
-        $@"fields id,name,first_release_date,category,cover.image_id,platforms.name,parent_game,version_parent,slug;
-           where name ~ ""{safe}""* & category = 0 & parent_game = null & version_parent = null;
-           limit 3;",
-        ct);
-
-    // === PRE-FLIGHT C: alternative_names → game id’lerini çek
-    var altRows = await PostAsync<AltNameRow>(
-        "alternative_names",
-        $@"fields id,name,game;
-           where name ~ ""{safe}""*;
-           limit 50;",
-        ct);
-
-    var altIds   = altRows.Where(a => a.game.HasValue).Select(a => a.game!.Value).Distinct().ToArray();
-    GameRowSearch[] fromAlts = Array.Empty<GameRowSearch>();
-    if (altIds.Length > 0)
     {
-        fromAlts = await PostAsync<GameRowSearch>(
+        if (string.IsNullOrWhiteSpace(query)) query = "";
+        if (page <= 0) page = 1;
+        if (pageSize <= 0) pageSize = 40;
+
+        var offset = (page - 1) * pageSize;
+        var safe = query.Replace("\"", "\\\"");
+        var toks = Tokens(query);
+
+        // --- normalize & slug (™, ®, noktalama vs. toleransı için)
+        var normQ = NormalizeName(query);
+        var slugQ = SlugifyStrict(query);
+
+        // === PRE-FLIGHT A: slug ile ana oyun
+        var exactBySlug = await PostAsync<GameRowSearch>(
             "games",
             $@"fields id,name,first_release_date,category,cover.image_id,platforms.name,parent_game,version_parent,slug;
+           where slug = ""{slugQ}"" & category = 0 & parent_game = null & version_parent = null;
+           limit 1;",
+            ct);
+
+        // === PRE-FLIGHT B: name ~ "query"* ile ana oyun (™ farkı için ‘=’ yerine ‘~’)
+        var exactByNameLoose = await PostAsync<GameRowSearch>(
+            "games",
+            $@"fields id,name,first_release_date,category,cover.image_id,platforms.name,parent_game,version_parent,slug;
+           where name ~ ""{safe}""* & category = 0 & parent_game = null & version_parent = null;
+           limit 3;",
+            ct);
+
+        // === PRE-FLIGHT C: alternative_names → game id’lerini çek
+        var altRows = await PostAsync<AltNameRow>(
+            "alternative_names",
+            $@"fields id,name,game;
+           where name ~ ""{safe}""*;
+           limit 50;",
+            ct);
+
+        var altIds = altRows.Where(a => a.game.HasValue).Select(a => a.game!.Value).Distinct().ToArray();
+        GameRowSearch[] fromAlts = Array.Empty<GameRowSearch>();
+        if (altIds.Length > 0)
+        {
+            fromAlts = await PostAsync<GameRowSearch>(
+                "games",
+                $@"fields id,name,first_release_date,category,cover.image_id,platforms.name,parent_game,version_parent,slug;
                where id = ({string.Join(',', altIds)});
                limit {Math.Min(altIds.Length, 200)};",
-            ct);
-    }
+                ct);
+        }
 
-    // === 1) /v4/search: ID’leri topla (kapsamı genişlet)
-    var searchRows = await PostAsync<SearchRow>(
-        "search",
-        $@"fields name, game;
+        // === 1) /v4/search: ID’leri topla (kapsamı genişlet)
+        var searchRows = await PostAsync<SearchRow>(
+            "search",
+            $@"fields name, game;
            search ""{safe}"";
            limit {Math.Min(pageSize * 3, 100)};
            offset {offset};",
-        ct);
+            ct);
 
-    var ids = searchRows.Where(s => s.game.HasValue).Select(s => s.game!.Value).Distinct().ToList();
-    if (ids.Count == 0)
-        return await SearchGamesAsync(query, page, pageSize, ct);
+        var ids = searchRows.Where(s => s.game.HasValue).Select(s => s.game!.Value).Distinct().ToList();
+        if (ids.Count == 0)
+            return await SearchGamesAsync(query, page, pageSize, ct);
 
-    // === 2) /v4/games: ana oyun filtresi
-    var rowsMainOnly = await PostAsync<GameRowSearch>(
-        "games",
-        $@"fields id,name,first_release_date,category,cover.image_id,platforms.name,parent_game,version_parent,slug;
+        // === 2) /v4/games: ana oyun filtresi
+        var rowsMainOnly = await PostAsync<GameRowSearch>(
+            "games",
+            $@"fields id,name,first_release_date,category,cover.image_id,platforms.name,parent_game,version_parent,slug;
            where id = ({string.Join(",", ids)})
              & category = 0
              & parent_game = null
              & version_parent = null;
            limit {ids.Count};",
-        ct);
+            ct);
 
-    // === 3) /v4/games: tüm sonuçlar
-    var rowsAll = await PostAsync<GameRowSearch>(
-        "games",
-        $@"fields id,name,first_release_date,category,cover.image_id,platforms.name,parent_game,version_parent,slug;
+        // === 3) /v4/games: tüm sonuçlar
+        var rowsAll = await PostAsync<GameRowSearch>(
+            "games",
+            $@"fields id,name,first_release_date,category,cover.image_id,platforms.name,parent_game,version_parent,slug;
            where id = ({string.Join(",", ids)});
            limit {ids.Count};",
-        ct);
+            ct);
 
-    // === 4) Birleştir + tekilleştir
-    var combined = exactBySlug
-        .Concat(exactByNameLoose)
-        .Concat(fromAlts)
-        .Concat(rowsMainOnly)
-        .Concat(rowsAll)
-        .GroupBy(r => r.id)
-        .Select(g => g.First())
-        .ToList();
+        // === 4) Birleştir + tekilleştir
+        var combined = exactBySlug
+            .Concat(exactByNameLoose)
+            .Concat(fromAlts)
+            .Concat(rowsMainOnly)
+            .Concat(rowsAll)
+            .GroupBy(r => r.id)
+            .Select(g => g.First())
+            .ToList();
 
-    // === 5) Token filtresi
-    var filtered = combined.Where(r => ContainsAllTokens(r.name, toks)).ToList();
-    if (filtered.Count == 0 && toks.Count > 0)
-        filtered = combined.Where(r => (r.name ?? "").ToLowerInvariant().Contains(toks[0])).ToList();
-    if (filtered.Count == 0)
-        filtered = combined;
+        // === 5) Token filtresi
+        var filtered = combined.Where(r => ContainsAllTokens(r.name, toks)).ToList();
+        if (filtered.Count == 0 && toks.Count > 0)
+            filtered = combined.Where(r => (r.name ?? "").ToLowerInvariant().Contains(toks[0])).ToList();
+        if (filtered.Count == 0)
+            filtered = combined;
 
-    // === (Opsiyonel) normalize/slug eşleşen ana oyunu en üste pin’le
-    var mainCandidates = filtered.Where(r =>
-        (r.category ?? 99) == 0 && !r.parent_game.HasValue && !r.version_parent.HasValue).ToList();
+        // === (Opsiyonel) normalize/slug eşleşen ana oyunu en üste pin’le
+        var mainCandidates = filtered.Where(r =>
+            (r.category ?? 99) == 0 && !r.parent_game.HasValue && !r.version_parent.HasValue).ToList();
 
-    var topMain = mainCandidates.FirstOrDefault(r =>
-        NormalizeName(r.name ?? "") == normQ ||
-        (r.slug ?? "").Equals(slugQ, StringComparison.OrdinalIgnoreCase));
+        var topMain = mainCandidates.FirstOrDefault(r =>
+            NormalizeName(r.name ?? "") == normQ ||
+            (r.slug ?? "").Equals(slugQ, StringComparison.OrdinalIgnoreCase));
 
-    if (topMain is not null)
-        filtered = new[] { topMain }.Concat(filtered.Where(r => r.id != topMain.id)).ToList();
+        if (topMain is not null)
+            filtered = new[] { topMain }.Concat(filtered.Where(r => r.id != topMain.id)).ToList();
 
-    // === 6) Sıralama: normalize tam eşleşme > slug tam eşleşme > ana oyun > (kalanlar)
-    var ordered = filtered
-        .OrderByDescending(r => NormalizeName(r.name ?? "") == normQ)
-        .ThenByDescending(r => (r.slug ?? "").Equals(slugQ, StringComparison.OrdinalIgnoreCase))
-        .ThenBy(r => r.category ?? int.MaxValue)                // 0 (Main Game) öne
-        .ThenBy(r => r.parent_game.HasValue ? 1 : 0)            // parent_game = null öne
-        .ThenBy(r => r.version_parent.HasValue ? 1 : 0)         // version_parent = null öne
-        .ThenBy(r => r.first_release_date ?? long.MaxValue)
-        .ToList();
+        // === 6) Sıralama: normalize tam eşleşme > slug tam eşleşme > ana oyun > (kalanlar)
+        var ordered = filtered
+            .OrderByDescending(r => NormalizeName(r.name ?? "") == normQ)
+            .ThenByDescending(r => (r.slug ?? "").Equals(slugQ, StringComparison.OrdinalIgnoreCase))
+            .ThenBy(r => r.category ?? int.MaxValue)                // 0 (Main Game) öne
+            .ThenBy(r => r.parent_game.HasValue ? 1 : 0)            // parent_game = null öne
+            .ThenBy(r => r.version_parent.HasValue ? 1 : 0)         // version_parent = null öne
+            .ThenBy(r => r.first_release_date ?? long.MaxValue)
+            .ToList();
 
-    // === 7) Map & return
-    var items = ordered.Select(MapToCard).ToList();
-    var next  = searchRows.Length < Math.Min(pageSize * 3, 100) ? null : "next";
-    return new IgdbPagedGames { Results = items, Next = next };
+        // === 7) Map & return
+        var items = ordered.Select(MapToCard).ToList();
+        var next = searchRows.Length < Math.Min(pageSize * 3, 100) ? null : "next";
+        return new IgdbPagedGames { Results = items, Next = next };
 
-    // ---- helpers ----
-    static string NormalizeName(string s)
-    {
-        if (string.IsNullOrWhiteSpace(s)) return "";
-        var lowered = s.ToLowerInvariant();
-        lowered = lowered.Replace("™", "").Replace("®", "");
-        lowered = Regex.Replace(lowered, @"[’'`]", "");
-        lowered = Regex.Replace(lowered, @"[^\p{L}\p{Nd}\s]+", " ");
-        lowered = Regex.Replace(lowered, @"\s+", " ").Trim();
-        return lowered;
-    }
-
-    static string SlugifyStrict(string s) =>
-        Regex.Replace(s.Trim().ToLowerInvariant(), @"[^a-z0-9]+", "-").Trim('-');
-
-    static string Slugify(string s) => // mevcut kodunla uyumlu kalsın
-        Regex.Replace(s.Trim().ToLowerInvariant(), @"[^a-z0-9]+", "-").Trim('-');
-
-    static List<string> Tokens(string s)
-    {
-        var stop = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "the", "a", "an", "of", "and" };
-        return Regex.Split(s, @"\W+")
-                    .Where(t => !string.IsNullOrWhiteSpace(t))
-                    .Select(t => t.ToLowerInvariant())
-                    .Where(t => !stop.Contains(t))
-                    .ToList();
-    }
-
-    static bool ContainsAllTokens(string? name, List<string> toks)
-    {
-        if (string.IsNullOrWhiteSpace(name)) return false;
-        var lower = name.ToLowerInvariant();
-        return toks.All(t => lower.Contains(t));
-    }
-
-    IgdbGameCard MapToCard(GameRowSearch r)
-    {
-        string? coverUrl = !string.IsNullOrWhiteSpace(r.cover?.image_id)
-            ? $"https://images.igdb.com/igdb/image/upload/t_cover_big/{r.cover.image_id}.jpg"
-            : null;
-
-        int? year = r.first_release_date.HasValue
-            ? (int?)DateTimeOffset.FromUnixTimeSeconds(r.first_release_date.Value).UtcDateTime.Year
-            : null;
-
-        return new IgdbGameCard
+        // ---- helpers ----
+        static string NormalizeName(string s)
         {
-            Id        = r.id,
-            Name      = r.name ?? $"game-{r.id}",
-            Year      = year,
-            Cover     = coverUrl,
-            Platforms = r.platforms?.Select(p => p.name).Where(n => !string.IsNullOrWhiteSpace(n)).Distinct().ToList()
-                        ?? new List<string>(),
-            Category  = CatToText(r.category)
-        };
+            if (string.IsNullOrWhiteSpace(s)) return "";
+            var lowered = s.ToLowerInvariant();
+            lowered = lowered.Replace("™", "").Replace("®", "");
+            lowered = Regex.Replace(lowered, @"[’'`]", "");
+            lowered = Regex.Replace(lowered, @"[^\p{L}\p{Nd}\s]+", " ");
+            lowered = Regex.Replace(lowered, @"\s+", " ").Trim();
+            return lowered;
+        }
+
+        static string SlugifyStrict(string s) =>
+            Regex.Replace(s.Trim().ToLowerInvariant(), @"[^a-z0-9]+", "-").Trim('-');
+
+        static string Slugify(string s) => // mevcut kodunla uyumlu kalsın
+            Regex.Replace(s.Trim().ToLowerInvariant(), @"[^a-z0-9]+", "-").Trim('-');
+
+        static List<string> Tokens(string s)
+        {
+            var stop = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "the", "a", "an", "of", "and" };
+            return Regex.Split(s, @"\W+")
+                        .Where(t => !string.IsNullOrWhiteSpace(t))
+                        .Select(t => t.ToLowerInvariant())
+                        .Where(t => !stop.Contains(t))
+                        .ToList();
+        }
+
+        static bool ContainsAllTokens(string? name, List<string> toks)
+        {
+            if (string.IsNullOrWhiteSpace(name)) return false;
+            var lower = name.ToLowerInvariant();
+            return toks.All(t => lower.Contains(t));
+        }
+
+        IgdbGameCard MapToCard(GameRowSearch r)
+        {
+            string? coverUrl = !string.IsNullOrWhiteSpace(r.cover?.image_id)
+                ? $"https://images.igdb.com/igdb/image/upload/t_cover_big/{r.cover.image_id}.jpg"
+                : null;
+
+            int? year = r.first_release_date.HasValue
+                ? (int?)DateTimeOffset.FromUnixTimeSeconds(r.first_release_date.Value).UtcDateTime.Year
+                : null;
+
+            return new IgdbGameCard
+            {
+                Id = r.id,
+                Name = r.name ?? $"game-{r.id}",
+                Year = year,
+                Cover = coverUrl,
+                Platforms = r.platforms?.Select(p => p.name).Where(n => !string.IsNullOrWhiteSpace(n)).Distinct().ToList()
+                            ?? new List<string>(),
+                Category = CatToText(r.category)
+            };
+        }
     }
-}
 
 
 
 
-//Smart yardımcı dto
-private sealed class AltNameRow
-{
-    public long id { get; set; }
-    public string? name { get; set; }
-    public long? game { get; set; }
-}
+    //Smart yardımcı dto
+    private sealed class AltNameRow
+    {
+        public long id { get; set; }
+        public string? name { get; set; }
+        public long? game { get; set; }
+    }
 
 
 
@@ -316,44 +334,44 @@ private sealed class AltNameRow
         public long? game { get; set; } // games tablosundaki id
     }
 
-// IGDB category enumunu metne çevir
-private static string? CatToText(long? cat) => cat switch
-{
-    0  => "Main Game",
-    1  => "DLC/Add-on",
-    2  => "Expansion",
-    3  => "Bundle",
-    4  => "Standalone Expansion",
-    5  => "Mod",
-    6  => "Episode",
-    7  => "Season",
-    8  => "Remake",
-    9  => "Remaster",
-    10 => "Expanded Game",
-    11 => "Port",
-    12 => "Fork",
-    13 => "Pack",
-    _  => null
-};
+    // IGDB category enumunu metne çevir
+    private static string? CatToText(long? cat) => cat switch
+    {
+        0 => "Main Game",
+        1 => "DLC/Add-on",
+        2 => "Expansion",
+        3 => "Bundle",
+        4 => "Standalone Expansion",
+        5 => "Mod",
+        6 => "Episode",
+        7 => "Season",
+        8 => "Remake",
+        9 => "Remaster",
+        10 => "Expanded Game",
+        11 => "Port",
+        12 => "Fork",
+        13 => "Pack",
+        _ => null
+    };
 
-// Bu arama modeli, cover/platform isimlerini embed eder
-private sealed class GameRowSearch
-{
-    public long id { get; set; }
-    public string? name { get; set; }
-    public long? first_release_date { get; set; }
-    public long? category { get; set; }
-    public CoverObj? cover { get; set; }
-    public PlatformObj[]? platforms { get; set; }
+    // Bu arama modeli, cover/platform isimlerini embed eder
+    private sealed class GameRowSearch
+    {
+        public long id { get; set; }
+        public string? name { get; set; }
+        public long? first_release_date { get; set; }
+        public long? category { get; set; }
+        public CoverObj? cover { get; set; }
+        public PlatformObj[]? platforms { get; set; }
 
-    // yeni alanlar:
-    public long? parent_game { get; set; }
-    public long? version_parent { get; set; }
-    public string? slug { get; set; }
+        // yeni alanlar:
+        public long? parent_game { get; set; }
+        public long? version_parent { get; set; }
+        public string? slug { get; set; }
 
-    public sealed class CoverObj { public string? image_id { get; set; } }
-    public sealed class PlatformObj { public string? name { get; set; } }
-}
+        public sealed class CoverObj { public string? image_id { get; set; } }
+        public sealed class PlatformObj { public string? name { get; set; } }
+    }
 
 
 
@@ -467,7 +485,27 @@ private sealed class GameRowSearch
         var platformNames = g.platforms is { Length: > 0 } ? await ResolveNames("platforms", g.platforms!, ct) : new List<string>();
 
         var (developers, publishers) = await ResolveCompaniesAsync(g.involved_companies, ct);
-        var ageNames = await ResolveAgeRatingsAsync(g.age_ratings, ct);
+       List<string> ageNames;
+List<string> contentWarnings;
+
+try
+{
+    (ageNames, contentWarnings) = await ResolveAgeRatingsRobustAsync(g.age_ratings, ct);
+}
+catch (Exception ex)
+{
+    Console.WriteLine("[AGE] EXCEPTION: " + ex.ToString());
+    throw; // 500'ün gerçek sebebini görmek için
+}
+
+// Son çare: yine boşsa eski enum + eski content
+if (ageNames.Count == 0 && (g.age_ratings?.Length ?? 0) > 0)
+    ageNames = await ResolveAgeRatingsAsync(g.age_ratings, ct);
+
+if (contentWarnings.Count == 0 && (g.age_ratings?.Length ?? 0) > 0)
+    contentWarnings = await ResolveContentWarningsAsync(g.age_ratings, ct);
+
+
         var tagNames = g.keywords is { Length: > 0 } ? await ResolveKeywordsAsync(g.keywords!, ct) : new List<string>();
         var awards = ExtractAwardsFromTags(tagNames);
 
@@ -481,7 +519,7 @@ private sealed class GameRowSearch
         }
 
         var (audioLangs, subtitleLangs, uiLangs) = await ResolveLanguagesAsync(g.id, ct);
-        var contentWarnings = await ResolveContentWarningsAsync(g.age_ratings, ct);
+        
 
         var engineNames = g.game_engines is { Length: > 0 }
     ? await ResolveNames("game_engines", g.game_engines!, ct)
@@ -563,57 +601,57 @@ private sealed class GameRowSearch
     private static string IgdbImage(string imageId, string size = "t_screenshot_big")
     => $"https://images.igdb.com/igdb/image/upload/{size}/{imageId}.jpg";
 
-private static TrailerDto IgdbVideoToTrailer(string videoId) => new TrailerDto
-{
-    Platform  = "youtube",
-    Url       = $"https://www.youtube.com/watch?v={videoId}",
-    YouTubeId = videoId
-};
+    private static TrailerDto IgdbVideoToTrailer(string videoId) => new TrailerDto
+    {
+        Platform = "youtube",
+        Url = $"https://www.youtube.com/watch?v={videoId}",
+        YouTubeId = videoId
+    };
 
-// IGDB: games -> screenshots.image_id & videos.video_id
-// Services/IgdbClient.cs  (sınıfın içine ekle)
+    // IGDB: games -> screenshots.image_id & videos.video_id
+    // Services/IgdbClient.cs  (sınıfın içine ekle)
 
-public async Task<(List<string> screenshots, List<TrailerDto> trailers)> GetMediaAsync(long gameId, CancellationToken ct = default)
-{
-    // 1) Screenshots
-    var ssRows = await PostAsync<ScreenshotRow>(
-        "screenshots",
-        $"fields image_id; where game = {gameId}; limit 100;",
-        ct);
+    public async Task<(List<string> screenshots, List<TrailerDto> trailers)> GetMediaAsync(long gameId, CancellationToken ct = default)
+    {
+        // 1) Screenshots
+        var ssRows = await PostAsync<ScreenshotRow>(
+            "screenshots",
+            $"fields image_id; where game = {gameId}; limit 100;",
+            ct);
 
-    // IGDB image url formatı: https://images.igdb.com/igdb/image/upload/<size>/<image_id>.jpg
-    // Uygun size: t_screenshot_big (ya da t_1080p)
-    var screenshots = ssRows
-        .Select(r => r.image_id)
-        .Where(id => !string.IsNullOrWhiteSpace(id))
-        .Select(id => $"https://images.igdb.com/igdb/image/upload/t_screenshot_big/{id}.jpg")
-        .Distinct()
-        .ToList();
+        // IGDB image url formatı: https://images.igdb.com/igdb/image/upload/<size>/<image_id>.jpg
+        // Uygun size: t_screenshot_big (ya da t_1080p)
+        var screenshots = ssRows
+            .Select(r => r.image_id)
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Select(id => $"https://images.igdb.com/igdb/image/upload/t_screenshot_big/{id}.jpg")
+            .Distinct()
+            .ToList();
 
-    // 2) Game videos (YouTube)
-    var vidRows = await PostAsync<GameVideoRow>(
-        "game_videos",
-        $"fields video_id,name; where game = {gameId}; limit 100;",
-        ct);
+        // 2) Game videos (YouTube)
+        var vidRows = await PostAsync<GameVideoRow>(
+            "game_videos",
+            $"fields video_id,name; where game = {gameId}; limit 100;",
+            ct);
 
-    var trailers = vidRows
-        .Select(v => new TrailerDto
-        {
-            Platform  = "YouTube",
-            YouTubeId = v.video_id,
-            Url       = string.IsNullOrWhiteSpace(v.video_id) ? null : $"https://www.youtube.com/watch?v={v.video_id}",
-            
-        })
-        .Where(t => !string.IsNullOrWhiteSpace(t.YouTubeId) || !string.IsNullOrWhiteSpace(t.Url))
-        .DistinctBy(t => t.YouTubeId ?? t.Url) // .NET 6+ varsa; yoksa GroupBy ile yap
-        .ToList();
+        var trailers = vidRows
+            .Select(v => new TrailerDto
+            {
+                Platform = "YouTube",
+                YouTubeId = v.video_id,
+                Url = string.IsNullOrWhiteSpace(v.video_id) ? null : $"https://www.youtube.com/watch?v={v.video_id}",
 
-    return (screenshots, trailers);
-}
+            })
+            .Where(t => !string.IsNullOrWhiteSpace(t.YouTubeId) || !string.IsNullOrWhiteSpace(t.Url))
+            .DistinctBy(t => t.YouTubeId ?? t.Url) // .NET 6+ varsa; yoksa GroupBy ile yap
+            .ToList();
 
-// --- private row modellerini dosyanın altına ekle ---
-private sealed class ScreenshotRow { public long id { get; set; } public string? image_id { get; set; } }
-private sealed class GameVideoRow  { public long id { get; set; } public string? video_id { get; set; } public string? name { get; set; } }
+        return (screenshots, trailers);
+    }
+
+    // --- private row modellerini dosyanın altına ekle ---
+    private sealed class ScreenshotRow { public long id { get; set; } public string? image_id { get; set; } }
+    private sealed class GameVideoRow { public long id { get; set; } public string? video_id { get; set; } public string? name { get; set; } }
 
 
 
@@ -661,36 +699,134 @@ private sealed class GameVideoRow  { public long id { get; set; } public string?
     }
 
     private async Task<List<string>> ResolveContentWarningsAsync(long[]? ageRatingIds, CancellationToken ct)
+{
+    var list = new List<string>();
+    if (ageRatingIds is not { Length: > 0 }) return list;
+
+    // 1) Hem eski hem yeni ID alanlarını çek
+    var ars = await PostAsync<AgeRatingRaw>(
+        "age_ratings",
+        $"fields id,content_descriptions,rating_content_descriptions; where id = ({string.Join(',', ageRatingIds.Distinct())}); limit 500;",
+        ct);
+
+    var v1Ids = ars.Where(a => a.content_descriptions is { Length: > 0 })
+                   .SelectMany(a => a.content_descriptions!)
+                   .Distinct()
+                   .ToArray();
+
+    var v2Ids = ars.Where(a => a.rating_content_descriptions is { Length: > 0 })
+                   .SelectMany(a => a.rating_content_descriptions!)
+                   .Distinct()
+                   .ToArray();
+
+    // 2) Önce V2'den çek (yeni tablo)
+    var descs = new Dictionary<long,string>();
+    if (v2Ids.Length > 0)
     {
-        var list = new List<string>();
-        if (ageRatingIds is not { Length: > 0 }) return list;
-
-        // age_ratings → content_descriptions[]
-        var ars = await PostAsync<AgeRatingWithContentRow>(
-            "age_ratings",
-            $"fields id,content_descriptions; where id = ({string.Join(',', ageRatingIds.Distinct())}); limit 500;",
+        var cdsV2 = await PostAsync<ContentDescRowV2>(
+            "age_rating_content_descriptions_v2",
+            $"fields id,description; where id = ({string.Join(',', v2Ids)}); limit 1000;",
             ct);
-
-        var contentIds = ars.Where(a => a.content_descriptions is { Length: > 0 })
-                            .SelectMany(a => a.content_descriptions!)
-                            .Distinct()
-                            .ToArray();
-        if (contentIds.Length == 0) return list;
-
-        // age_rating_content_descriptions → description
-        var cds = await PostAsync<ContentDescRow>(
-            "age_rating_content_descriptions",
-            $"fields id,description; where id = ({string.Join(',', contentIds)}); limit 500;",
-            ct);
-
-        list.AddRange(cds.Select(c => c.description).Where(d => !string.IsNullOrWhiteSpace(d))!);
-        return list.Distinct().ToList();
+        foreach (var d in cdsV2)
+            if (!string.IsNullOrWhiteSpace(d.description))
+                descs[d.id] = d.description!;
     }
+
+    // 3) V1'den de dene (bazı oyunlarda hâlâ eski tablo dolu olabiliyor)
+    if (v1Ids.Length > 0)
+    {
+        var cdsV1 = await PostAsync<ContentDescRow>(
+            "age_rating_content_descriptions",
+            $"fields id,description; where id = ({string.Join(',', v1Ids)}); limit 1000;",
+            ct);
+        foreach (var d in cdsV1)
+            if (!string.IsNullOrWhiteSpace(d.description) && !descs.ContainsKey(d.id))
+                descs[d.id] = d.description!;
+    }
+
+    // 4) Sıralı unique liste
+    list = descs.Values
+                .Where(s => !string.IsNullOrWhiteSpace(s))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+    return list;
+}
+
 
     // --- modeller ---
     private sealed class LangSupportRow { public long? language { get; set; } public long? language_support_type { get; set; } }
     private sealed class AgeRatingWithContentRow { public long id { get; set; } public long[]? content_descriptions { get; set; } }
     private sealed class ContentDescRow { public long id { get; set; } public string? description { get; set; } }
+private sealed class ContentDescRowV2 { public long id { get; set; } public string? description { get; set; } }
+
+
+    public sealed class IgdbNamedRef
+    {
+        public long id { get; set; }
+        public string? name { get; set; }
+    }
+
+    public sealed class IgdbContentDesc
+    {
+        public long id { get; set; }
+        public string? description { get; set; }
+    }
+
+    private sealed class AgeRatingRaw
+    {
+        public long id { get; set; }
+        public long? organization { get; set; }                 // ref id
+        public long? rating_category { get; set; }              // ref id
+        public long[]? content_descriptions { get; set; }       // V1 ids
+        public long[]? rating_content_descriptions { get; set; }// V2 ids
+        public long? category { get; set; }                     // deprecated
+        public long? rating { get; set; }                       // deprecated
+    }
+
+// DTO: /v4/age_rating_categories
+// /v4/age_rating_categories cevabı için
+private sealed class AgeRatingCategoryRow
+{
+    public long id { get; set; }
+    public string? rating { get; set; }        // "Mature 17+", "18", "16" vb.
+    public long? organization { get; set; }    // ESRB/PEGI... (opsiyonel)
+}
+
+
+
+    private sealed class AgeRatingNested
+    {
+        public long id { get; set; }
+        public IgdbNamedRef? organization { get; set; }
+        public IgdbNamedRef? rating_category { get; set; }
+        public IgdbContentDesc[]? content_descriptions { get; set; }
+        public IgdbContentDesc[]? rating_content_descriptions { get; set; }
+        public long? category { get; set; }
+        public long? rating { get; set; }
+    }
+
+
+    public sealed class AgeRatingRowV2
+{
+    public long id { get; set; }
+
+    // Yeni referanslar
+    public IgdbNamedRef? organization { get; set; }
+    public IgdbNamedRef? rating_category { get; set; }
+
+    public string? rating_cover_url { get; set; }
+    public string? synopsis { get; set; }
+
+    public IgdbContentDesc[]? content_descriptions { get; set; }            // eski
+    public IgdbContentDesc[]? rating_content_descriptions { get; set; }     // V2
+
+    // GERİYE UYUMLULUK (deprecated)
+    public long? category { get; set; }
+    public long? rating { get; set; }
+}
+
+
 
 
 
@@ -866,15 +1002,15 @@ private sealed class GameVideoRow  { public long id { get; set; } public string?
     private sealed class IdNameRow { public long id { get; set; } public string? name { get; set; } }
     private sealed class CoverRow { public long id { get; set; } public string? image_id { get; set; } }
     private sealed class InvolvedCompanyRow
-{
-    public long id { get; set; }
-    public long? company { get; set; }
-    public bool? developer { get; set; }
-    public bool? publisher { get; set; }
-    public bool? supporting { get; set; } // <-- ekle
-    public bool? porting { get; set; }    // <-- opsiyonel (istersen)
-    public long? game { get; set; }       // <-- opsiyonel (sorguda kullanıyorsun)
-}
+    {
+        public long id { get; set; }
+        public long? company { get; set; }
+        public bool? developer { get; set; }
+        public bool? publisher { get; set; }
+        public bool? supporting { get; set; } // <-- ekle
+        public bool? porting { get; set; }    // <-- opsiyonel (istersen)
+        public long? game { get; set; }       // <-- opsiyonel (sorguda kullanıyorsun)
+    }
     private sealed class AgeRatingRow { public long id { get; set; } public long? category { get; set; } public long? rating { get; set; } }
 
 
@@ -1044,12 +1180,7 @@ private sealed class GameVideoRow  { public long id { get; set; } public string?
         return null; // bilinmeyen host → alma
     }
 
-    private static string GuessStoreName(string host)
-    {
-        if (host.Contains("store.")) return host.Replace("store.", "", StringComparison.OrdinalIgnoreCase);
-        return host;
-    }
-    private static string SlugifyHost(string host) => host.Replace(".", "-");
+    
 
     // --- IGDB row modelleri ---
     private sealed class WebsiteRow { public long id { get; set; } public long? category { get; set; } public string? url { get; set; } }
@@ -1084,86 +1215,221 @@ private sealed class GameVideoRow  { public long id { get; set; } public string?
 
 
     public async Task<(List<string> cast, List<string> crew)> GetCreditsAsync(long gameId, CancellationToken ct = default)
-{
-    // ---- CREW: involved_companies -> companies ----
-    var inv = await PostAsync<InvolvedCompanyRow>(
-    "involved_companies",
-    $"fields id,company,developer,publisher,supporting,porting,game; where game = {gameId}; limit 200;",
-    ct);
-
-
-    var companyIds = inv.Where(i => i.company.HasValue).Select(i => i.company!.Value).Distinct().ToArray();
-    var nameById = new Dictionary<long, string>();
-    if (companyIds.Length > 0)
     {
-        var comps = await PostAsync<IdNameRow>(
-            "companies",
-            $"fields id,name; where id = ({string.Join(',', companyIds)}); limit 500;",
-            ct);
-        nameById = comps.ToDictionary(c => c.id, c => c.name ?? $"company-{c.id}");
-    }
+        // ---- CREW: involved_companies -> companies ----
+        var inv = await PostAsync<InvolvedCompanyRow>(
+        "involved_companies",
+        $"fields id,company,developer,publisher,supporting,porting,game; where game = {gameId}; limit 200;",
+        ct);
 
-    var crew = new List<string>();
-    foreach (var i in inv)
-    {
-        if (i.company is null) continue;
-        var n = nameById.TryGetValue(i.company.Value, out var nm) ? nm : $"company-{i.company}";
-        var role = i.developer == true ? "Developer"
-                 : i.publisher == true ? "Publisher"
-                 : i.supporting == true ? "Support"
-                 : "Company";
-        crew.Add($"{n} ({role})");
-    }
-    crew = crew.Distinct().ToList();
 
-    // ---- CAST (voice actors): characters -> people ----
-    // Bu ilişki her oyunda dolu olmayabilir; boş gelirse problem değil.
-    var cast = new List<string>();
-    try
-    {
-        var chars = await PostAsync<CharacterRow>(
-            "characters",
-            $"fields id,name,people,games; where games = ({gameId}); limit 500;",
-            ct);
-
-        var peopleIds = chars.Where(c => c.people is { Length: > 0 })
-                             .SelectMany(c => c.people!)
-                             .Distinct()
-                             .ToArray();
-
-        if (peopleIds.Length > 0)
+        var companyIds = inv.Where(i => i.company.HasValue).Select(i => i.company!.Value).Distinct().ToArray();
+        var nameById = new Dictionary<long, string>();
+        if (companyIds.Length > 0)
         {
-            var people = await PostAsync<PersonRow>(
-                "people",
-                $"fields id,name; where id = ({string.Join(',', peopleIds)}); limit 500;",
+            var comps = await PostAsync<IdNameRow>(
+                "companies",
+                $"fields id,name; where id = ({string.Join(',', companyIds)}); limit 500;",
                 ct);
-            cast = people.Select(p => p.name ?? $"person-{p.id}")
-                         .Distinct()
-                         .ToList();
+            nameById = comps.ToDictionary(c => c.id, c => c.name ?? $"company-{c.id}");
         }
+
+        var crew = new List<string>();
+        foreach (var i in inv)
+        {
+            if (i.company is null) continue;
+            var n = nameById.TryGetValue(i.company.Value, out var nm) ? nm : $"company-{i.company}";
+            var role = i.developer == true ? "Developer"
+                     : i.publisher == true ? "Publisher"
+                     : i.supporting == true ? "Support"
+                     : "Company";
+            crew.Add($"{n} ({role})");
+        }
+        crew = crew.Distinct().ToList();
+
+        // ---- CAST (voice actors): characters -> people ----
+        // Bu ilişki her oyunda dolu olmayabilir; boş gelirse problem değil.
+        var cast = new List<string>();
+        try
+        {
+            var chars = await PostAsync<CharacterRow>(
+                "characters",
+                $"fields id,name,people,games; where games = ({gameId}); limit 500;",
+                ct);
+
+            var peopleIds = chars.Where(c => c.people is { Length: > 0 })
+                                 .SelectMany(c => c.people!)
+                                 .Distinct()
+                                 .ToArray();
+
+            if (peopleIds.Length > 0)
+            {
+                var people = await PostAsync<PersonRow>(
+                    "people",
+                    $"fields id,name; where id = ({string.Join(',', peopleIds)}); limit 500;",
+                    ct);
+                cast = people.Select(p => p.name ?? $"person-{p.id}")
+                             .Distinct()
+                             .ToList();
+            }
+        }
+        catch
+        {
+            // characters/people endpoint’leri veri yoksa ya da model farklıysa boş bırak.
+        }
+
+        return (cast, crew);
     }
-    catch
+
+    // MODELLERE ekle:
+    private sealed class CharacterRow { public long id { get; set; } public string? name { get; set; } public long[]? people { get; set; } }
+    private sealed class PersonRow { public long id { get; set; } public string? name { get; set; } }
+
+
+    private sealed class CreditRow
     {
-        // characters/people endpoint’leri veri yoksa ya da model farklıysa boş bırak.
+        public long id { get; set; }
+        public long? person { get; set; }
+        public long? character { get; set; }
+        public bool? voice_actor { get; set; } // opsiyonel, gerekirse kullanırız
     }
 
-    return (cast, crew);
-}
 
-// MODELLERE ekle:
-private sealed class CharacterRow { public long id { get; set; } public string? name { get; set; } public long[]? people { get; set; } }
-private sealed class PersonRow    { public long id { get; set; } public string? name { get; set; } }
-
-
-private sealed class CreditRow
+   private async Task<(List<string> ageNames, List<string> warnings)>
+ResolveAgeRatingsRobustAsync(long[]? ageRatingIds, CancellationToken ct)
 {
-    public long id { get; set; }
-    public long? person { get; set; }
-    public long? character { get; set; }
-    public bool? voice_actor { get; set; } // opsiyonel, gerekirse kullanırız
+    var labels = new List<string>();
+    var warns  = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    if (ageRatingIds is not { Length: > 0 }) return (labels, warns.ToList());
+
+    var ids = ageRatingIds.Distinct().ToArray();
+
+    // 1) Raw çek
+    var raws = await PostAsync<AgeRatingRaw>(
+        "age_ratings",
+        "fields id,organization,rating_category,content_descriptions," +
+        "rating_content_descriptions,category,rating;" +
+        $" where id = ({string.Join(',', ids)}); limit 500;",
+        ct);
+
+    Console.WriteLine($"[AGE] raws: {raws.Length}");
+
+    // 2) Ref setlerini topla
+    var orgIds = raws.Select(a => a.organization).Where(v => v.HasValue).Select(v => v!.Value).Distinct().ToArray();
+    var catIds = raws.Select(a => a.rating_category).Where(v => v.HasValue).Select(v => v!.Value).Distinct().ToArray();
+    var v1Ids  = raws.Where(a => a.content_descriptions is { Length: > 0 }).SelectMany(a => a.content_descriptions!).Distinct().ToArray();
+    var v2Ids  = raws.Where(a => a.rating_content_descriptions is { Length: > 0 }).SelectMany(a => a.rating_content_descriptions!).Distinct().ToArray();
+
+    // 3) Org map
+    var orgMap = orgIds.Length == 0 ? new Dictionary<long,string>() :
+        (await PostAsync<IdNameRow>(
+            "age_rating_organizations",
+            $"fields id,name; where id=({string.Join(',', orgIds)}); limit 200;",
+            ct))
+        .GroupBy(x => x.id)
+        .ToDictionary(g => g.Key, g => g.First().name ?? $"org-{g.Key}");
+
+    Console.WriteLine($"[AGE] orgMap: {orgMap.Count}");
+
+    // 4) Category map (DOĞRU DTO + duplicate/NULL güvenli)
+    // KATEGORİLERİ ÇEK (yalnızca id,rating,organization)
+var cats = catIds.Length == 0 ? Array.Empty<AgeRatingCategoryRow>() :
+    await PostAsync<AgeRatingCategoryRow>(
+        "age_rating_categories",
+        $"fields id,rating,organization; where id=({string.Join(',', catIds)}); limit 500;",
+        ct);
+
+// id -> "rating" string map'i
+var catMap = cats
+    .GroupBy(x => x.id)
+    .ToDictionary(
+        g => g.Key,
+        g => g.First().rating ?? $"cat-{g.Key}"
+    );
+
+
+    Console.WriteLine($"[AGE] catMap: {catMap.Count}");
+
+    // 5) İçerik açıklamaları map (önce V1, sonra V2 ile overwrite)
+    var cdMap = new Dictionary<long,string>();
+    if (v1Ids.Length > 0)
+    {
+        var v1 = await PostAsync<ContentDescRow>(
+            "age_rating_content_descriptions",
+            $"fields id,description; where id=({string.Join(',', v1Ids)}); limit 500;",
+            ct);
+        foreach (var c in v1)
+            if (c.description is { Length: > 0 })
+                cdMap[c.id] = c.description!;
+    }
+    if (v2Ids.Length > 0)
+    {
+        var v2 = await PostAsync<ContentDescRowV2>(
+            "age_rating_content_descriptions_v2",
+            $"fields id,description; where id=({string.Join(',', v2Ids)}); limit 500;",
+            ct);
+        foreach (var c in v2)
+            if (c.description is { Length: > 0 })
+                cdMap[c.id] = c.description!;
+    }
+
+    Console.WriteLine($"[AGE] cdMap: {cdMap.Count} (v1:{v1Ids.Length} v2:{v2Ids.Length})");
+
+    // 6) Label + warnings üret
+    foreach (var a in raws)
+    {
+        // Label
+        if (a.organization.HasValue && orgMap.TryGetValue(a.organization.Value, out var org) &&
+            a.rating_category.HasValue && catMap.TryGetValue(a.rating_category.Value, out var cat))
+        {
+            labels.Add($"{org} {cat}");
+        }
+        else if (a.rating_category.HasValue && catMap.TryGetValue(a.rating_category.Value, out var onlyCat))
+        {
+            labels.Add(onlyCat);
+        }
+        else if (a.organization.HasValue && orgMap.TryGetValue(a.organization.Value, out var onlyOrg))
+        {
+            labels.Add(onlyOrg);
+        }
+        else if (a.category.HasValue && a.rating.HasValue) // legacy fallback
+        {
+            labels.Add(a.category switch {
+                1 => $"ESRB {ToEsrb(a.rating)}",
+                2 => $"PEGI {ToPegi(a.rating)}",
+                3 => $"CERO {a.rating}",
+                4 => $"USK {a.rating}",
+                5 => $"GRAC {a.rating}",
+                6 => $"CLASS_IND {a.rating}",
+                7 => $"ACB {a.rating}",
+                _ => "Rating"
+            });
+        }
+
+        // Warnings (hem v1 hem v2 id'leri cdMap'ten okunuyor)
+        if (a.content_descriptions is { Length: > 0 })
+            foreach (var id in a.content_descriptions)
+                if (cdMap.TryGetValue(id, out var d)) warns.Add(d);
+
+        if (a.rating_content_descriptions is { Length: > 0 })
+            foreach (var id in a.rating_content_descriptions)
+                if (cdMap.TryGetValue(id, out var d)) warns.Add(d);
+    }
+
+    labels = labels
+        .Where(s => !string.IsNullOrWhiteSpace(s) && !string.Equals(s, "Rating", StringComparison.OrdinalIgnoreCase))
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .ToList();
+
+    Console.WriteLine($"[AGE] result labels:{labels.Count} warns:{warns.Count}");
+    return (labels, warns.ToList());
 }
 
-    
+
+
+
+
+
 
 }
 
