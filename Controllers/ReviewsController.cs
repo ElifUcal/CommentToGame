@@ -550,6 +550,50 @@ public async Task<IActionResult> VoteReview(string id, [FromBody] ReviewVoteDto 
         }
     }
 
+    // GET /api/reviews/{id}/voters
+[HttpGet("{id}/voters")]
+public async Task<ActionResult<object>> GetReviewVoters(string id, CancellationToken ct = default)
+{
+    if (!ObjectId.TryParse(id, out _)) return BadRequest("Invalid review id.");
+
+    // Review var mı? (opsiyonel ama iyi bir koruma)
+    var exists = await _reviews.Find(r => r.Id == id).Project(r => r.Id).FirstOrDefaultAsync(ct);
+    if (exists == null) return NotFound("Review not found.");
+
+    var filter = Builders<ReviewVote>.Filter.Eq(x => x.ReviewId, id);
+
+    // Sadece ihtiyacımız olan alanları çekelim
+    var proj = Builders<ReviewVote>.Projection
+        .Include(x => x.UserId)
+        .Include(x => x.Value);
+
+    var votes = await _reviewVotes
+        .Find(filter)
+        .Project<ReviewVote>(proj)
+        .ToListAsync(ct);
+
+    var likes = new List<object>();
+    var dislikes = new List<object>();
+
+    foreach (var v in votes)
+    {
+        // Ön uç beklediği için { userId } şeklinde objeler döndürüyoruz
+        var row = new { userId = v.UserId };
+        if (v.Value == 1) likes.Add(row);
+        else if (v.Value == -1) dislikes.Add(row);
+    }
+
+    return Ok(new
+    {
+        reviewId = id,
+        likeCount = likes.Count,
+        dislikeCount = dislikes.Count,
+        likes,
+        dislikes
+    });
+}
+
+
 
 
 
