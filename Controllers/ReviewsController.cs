@@ -507,17 +507,26 @@ public async Task<ActionResult<PagedResult<ReviewViewDto>>> GetGameReviews(
 
 
     // DELETE /api/replies/{replyId}
+    // Tam yetki kontrolü istiyorsan [Authorize] ekleyebilirsin
     [HttpDelete("~/api/replies/{replyId}")]
+    [Authorize(Roles = "Admin")]
     public async Task<IActionResult> DeleteReply(string replyId, CancellationToken ct = default)
     {
-        if (!ObjectId.TryParse(replyId, out _)) return BadRequest("Invalid reply id.");
+        if (!ObjectId.TryParse(replyId, out _))
+            return BadRequest("Invalid reply id.");
 
-        var update = Builders<ReviewReply>.Update.Set(x => x.DeletedAt, DateTime.UtcNow);
-        var res = await _reviewReplies.UpdateOneAsync(x => x.Id == replyId && x.DeletedAt == null, update, cancellationToken: ct);
-        if (res.MatchedCount == 0) return NotFound();
+        // Önce yanıtı sil
+        var del = await _reviewReplies.DeleteOneAsync(x => x.Id == replyId, ct);
+        if (del.DeletedCount == 0)
+            return NotFound();
+
+        // Ardından bu yanıta ait oyları temizle (MongoDB'de otomatik cascade yok)
+        await _replyVotes.DeleteManyAsync(x => x.ReplyId == replyId, ct);
 
         return NoContent();
     }
+
+
 
     // POST /api/replies/{replyId}/vote  body: { userId, value }
     [Authorize]
