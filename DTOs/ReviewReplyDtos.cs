@@ -3,7 +3,7 @@ namespace CommentToGame.DTOs
 {
     public class ReviewReplyCreateDto
     {
-        public required string UserId { get; set; }
+        public string? UserId { get; set; }
         public required string Comment { get; set; }
         public bool IsSpoiler { get; set; }
     }
