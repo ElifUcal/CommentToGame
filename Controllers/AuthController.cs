@@ -141,31 +141,33 @@ public async Task<IActionResult> Login([FromBody] LoginDto request)
     }
 
     private string CreateToken(User user)
+{
+    var claims = new List<Claim>
     {
-        var claims = new List<Claim>
-        {
-            new Claim(JwtRegisteredClaimNames.Sub, user.UserName),
-            new Claim(ClaimTypes.Name,  user.UserName),
-            new Claim(ClaimTypes.Email, user.Email ?? string.Empty),
-            new Claim(ClaimTypes.Role, user.UserType.ToString())
-        };
+        new Claim("id", user.Id), // 🔥 bunu ekle
+        new Claim(JwtRegisteredClaimNames.Sub, user.UserName),
+        new Claim(ClaimTypes.Name,  user.UserName),
+        new Claim(ClaimTypes.Email, user.Email ?? string.Empty),
+        new Claim(ClaimTypes.Role, user.UserType.ToString())
+    };
 
-        var keyStr = _config.GetValue<string>("Jwt:Key")
+    var keyStr = _config.GetValue<string>("Jwt:Key")
                      ?? throw new InvalidOperationException("Jwt:Key missing.");
-        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(keyStr));
-        var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
+    var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(keyStr));
+    var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
 
-        int days = int.TryParse(_config["Jwt:ExpireDays"], out var d) ? d : 1;
+    int days = int.TryParse(_config["Jwt:ExpireDays"], out var d) ? d : 1;
 
-        var token = new JwtSecurityToken(
-            claims: claims,
-            notBefore: DateTime.UtcNow,
-            expires: DateTime.UtcNow.AddDays(days),
-            signingCredentials: creds
-        );
+    var token = new JwtSecurityToken(
+        claims: claims,
+        notBefore: DateTime.UtcNow,
+        expires: DateTime.UtcNow.AddDays(days),
+        signingCredentials: creds
+    );
 
-        return new JwtSecurityTokenHandler().WriteToken(token);
-    }
+    return new JwtSecurityTokenHandler().WriteToken(token);
+}
+
 
     private static string GenerateRefreshToken()
     {

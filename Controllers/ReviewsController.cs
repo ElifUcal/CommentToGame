@@ -1,9 +1,11 @@
 using System.Globalization;
+using System.Security.Claims;
 using System.Text;
 using CommentToGame.Data;
 using CommentToGame.DTOs;
 using CommentToGame.Models;
 using CommentToGame.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using MongoDB.Bson;
 using MongoDB.Driver;
@@ -23,11 +25,17 @@ namespace CommentToGame.Controllers;
     {
         // Projene göre adı değiştir: "reviews"
         _reviews = db.GetCollection<Reviews>("reviews");
-        _reviewVotes   = db.GetCollection<ReviewVote>("review_votes");
+        _reviewVotes = db.GetCollection<ReviewVote>("review_votes");
         _reviewReplies = db.GetCollection<ReviewReply>("review_replies");
-        _replyVotes    = db.GetCollection<ReplyVote>("reply_votes");
+        _replyVotes = db.GetCollection<ReplyVote>("reply_votes");
     }
         
+    private string GetUserId()
+    {
+        return User.Claims.FirstOrDefault(c =>
+            c.Type == ClaimTypes.NameIdentifier || c.Type == "id")?.Value
+            ?? throw new UnauthorizedAccessException("Token geçersiz veya kullanıcı kimliği bulunamadı.");
+    }
         [HttpGet]
         public async Task<ActionResult<PagedResult<Reviews>>> GetList(
             [FromQuery] string? gameId,
@@ -244,47 +252,41 @@ public async Task<ActionResult<PagedResult<ReviewViewDto>>> GetGameReviews(
         }
 
         // POST /api/reviews
-        [HttpPost]
-public async Task<ActionResult<Reviews>> Create([FromBody] ReviewCreateDto dto, CancellationToken ct = default)
-{
-    if (!ObjectId.TryParse(dto.GameId, out _)) return BadRequest("Invalid GameId.");
-    if (!ObjectId.TryParse(dto.UserId, out _)) return BadRequest("Invalid UserId.");
-    if (!IsValidStar(dto.StarCount)) return BadRequest("StarCount must be between 1 and 5.");
-
-    var trimmed = string.IsNullOrWhiteSpace(dto.Comment) ? null : dto.Comment!.Trim();
-    if (trimmed != null && trimmed.Length > 500)
-        return BadRequest("Comment must be ≤ 500 characters.");
-
-    // Aynı kullanıcı + aynı oyun için tek kayıt kuralı
-    var filter = Builders<Reviews>.Filter.Eq(x => x.GameId, dto.GameId) &
-                 Builders<Reviews>.Filter.Eq(x => x.UserId, dto.UserId);
-
-    // Varsa aynı dokümanın Id’sini koruyarak replace edelim
-    var existing = await _reviews.Find(filter).FirstOrDefaultAsync(ct);
-
-    var entity = new Reviews
+       [Authorize]
+    [HttpPost]
+    public async Task<ActionResult<Reviews>> Create([FromBody] ReviewCreateDto dto, CancellationToken ct = default)
     {
-        Id = existing?.Id ?? ObjectId.GenerateNewId().ToString(),
-        GameId = dto.GameId,
-        UserId = dto.UserId,
-        StarCount = dto.StarCount,
-        Comment = trimmed,
-        isSpoiler = dto.IsSpoiler
-    };
+        var userId = GetUserId(); // 👈 JWT’den alıyoruz
+        if (!ObjectId.TryParse(dto.GameId, out _)) return BadRequest("Invalid GameId.");
+        if (!IsValidStar(dto.StarCount)) return BadRequest("StarCount must be between 1 and 5.");
 
-    var options = new ReplaceOptions { IsUpsert = true };
-    var result = await _reviews.ReplaceOneAsync(filter, entity, options, ct);
+        var trimmed = string.IsNullOrWhiteSpace(dto.Comment) ? null : dto.Comment!.Trim();
+        if (trimmed != null && trimmed.Length > 500)
+            return BadRequest("Comment must be ≤ 500 characters.");
 
-    // Eğer yeni oluşturulduysa 201, aksi halde 200 dönelim
-    if (existing == null && result.UpsertedId != null)
-    {
-        return CreatedAtAction(nameof(GetById), new { id = entity.Id }, entity);
-    }
-    else
-    {
+        var filter = Builders<Reviews>.Filter.Eq(x => x.GameId, dto.GameId) &
+                     Builders<Reviews>.Filter.Eq(x => x.UserId, userId);
+
+        var existing = await _reviews.Find(filter).FirstOrDefaultAsync(ct);
+
+        var entity = new Reviews
+        {
+            Id = existing?.Id ?? ObjectId.GenerateNewId().ToString(),
+            GameId = dto.GameId,
+            UserId = userId, // 👈 Frontend yerine token’dan
+            StarCount = dto.StarCount,
+            Comment = trimmed,
+            isSpoiler = dto.IsSpoiler
+        };
+
+        var options = new ReplaceOptions { IsUpsert = true };
+        var result = await _reviews.ReplaceOneAsync(filter, entity, options, ct);
+
+        if (existing == null && result.UpsertedId != null)
+            return CreatedAtAction(nameof(GetById), new { id = entity.Id }, entity);
+
         return Ok(entity);
     }
-}
 
 
         // PUT /api/reviews/{id}
@@ -374,44 +376,42 @@ public async Task<ActionResult<Reviews>> Create([FromBody] ReviewCreateDto dto, 
 
 
     // POST /api/reviews/{id}/vote  body: { userId, value = 1 | -1 }
-[HttpPost("{id}/vote")]
-public async Task<IActionResult> VoteReview(string id, [FromBody] ReviewVoteDto dto, CancellationToken ct = default)
-{
-    if (!ObjectId.TryParse(id, out _)) return BadRequest("Invalid review id.");
-    if (!ObjectId.TryParse(dto.UserId, out _)) return BadRequest("Invalid user id.");
-    if (dto.Value != 1 && dto.Value != -1) return BadRequest("Value must be 1 or -1.");
-
-    // review var mı?
-    var exists = await _reviews.Find(r => r.Id == id).Project(r => r.Id).FirstOrDefaultAsync(ct);
-    if (exists == null) return NotFound("Review not found.");
-
-    var filter = Builders<ReviewVote>.Filter.Eq(x => x.ReviewId, id) &
-                 Builders<ReviewVote>.Filter.Eq(x => x.UserId, dto.UserId);
-
-    var current = await _reviewVotes.Find(filter).FirstOrDefaultAsync(ct);
-
-    if (current == null)
+[Authorize]
+    [HttpPost("{id}/vote")]
+    public async Task<IActionResult> VoteReview(string id, [FromBody] ReviewVoteDto dto, CancellationToken ct = default)
     {
-        // hiç oy yok → insert
-        var doc = new ReviewVote { ReviewId = id, UserId = dto.UserId, Value = dto.Value };
-        await _reviewVotes.InsertOneAsync(doc, cancellationToken: ct);
-        return Ok(new { myVote = dto.Value });
-    }
-    else if (current.Value == dto.Value)
-    {
-        // aynı oy → toggle off (kaldır)
-        await _reviewVotes.DeleteOneAsync(filter, ct);
-        return Ok(new { myVote = 0 });
-    }
-    else
-    {
-        // farklı oy → replace
-        var update = Builders<ReviewVote>.Update.Set(x => x.Value, dto.Value);
-        await _reviewVotes.UpdateOneAsync(filter, update, cancellationToken: ct);
-        return Ok(new { myVote = dto.Value });
-    }
-}
+        var userId = GetUserId(); // 👈 Token’dan al
+        if (!ObjectId.TryParse(id, out _)) return BadRequest("Invalid review id.");
+        if (dto.Value != 1 && dto.Value != -1) return BadRequest("Value must be 1 or -1.");
 
+        var exists = await _reviews.Find(r => r.Id == id).Project(r => r.Id).FirstOrDefaultAsync(ct);
+        if (exists == null) return NotFound("Review not found.");
+
+        var filter = Builders<ReviewVote>.Filter.Eq(x => x.ReviewId, id) &
+                     Builders<ReviewVote>.Filter.Eq(x => x.UserId, userId);
+
+        var current = await _reviewVotes.Find(filter).FirstOrDefaultAsync(ct);
+
+        if (current == null)
+        {
+            await _reviewVotes.InsertOneAsync(
+            new ReviewVote { ReviewId = id, UserId = userId, Value = dto.Value },
+            new InsertOneOptions(),
+            ct);
+
+            return Ok(new { myVote = dto.Value });
+        }
+        else if (current.Value == dto.Value)
+        {
+            await _reviewVotes.DeleteOneAsync(filter, ct);
+            return Ok(new { myVote = 0 });
+        }
+        else
+        {
+            await _reviewVotes.UpdateOneAsync(filter, Builders<ReviewVote>.Update.Set(x => x.Value, dto.Value));
+            return Ok(new { myVote = dto.Value });
+        }
+    }
     // DELETE /api/reviews/{id}/vote?userId=...
     [HttpDelete("{id}/vote")]
     public async Task<IActionResult> RemoveReviewVote(string id, [FromQuery] string userId, CancellationToken ct = default)
@@ -470,12 +470,12 @@ public async Task<IActionResult> VoteReview(string id, [FromBody] ReviewVoteDto 
 
 
     // POST /api/reviews/{id}/replies
+    [Authorize]
     [HttpPost("{id}/replies")]
-    public async Task<ActionResult<ReviewReplyDto>> CreateReply(
-        string id, [FromBody] ReviewReplyCreateDto dto, CancellationToken ct = default)
+    public async Task<ActionResult<ReviewReplyDto>> CreateReply(string id, [FromBody] ReviewReplyCreateDto dto, CancellationToken ct = default)
     {
+        var userId = GetUserId(); // 👈 Token’dan al
         if (!ObjectId.TryParse(id, out _)) return BadRequest("Invalid review id.");
-        if (!ObjectId.TryParse(dto.UserId, out _)) return BadRequest("Invalid user id.");
         if (string.IsNullOrWhiteSpace(dto.Comment)) return BadRequest("Comment required.");
 
         var exists = await _reviews.Find(r => r.Id == id).Project(r => r.Id).FirstOrDefaultAsync(ct);
@@ -485,10 +485,11 @@ public async Task<IActionResult> VoteReview(string id, [FromBody] ReviewVoteDto 
         {
             Id = ObjectId.GenerateNewId().ToString(),
             ReviewId = id,
-            UserId = dto.UserId,
+            UserId = userId, // 👈 buraya yaz
             Comment = dto.Comment.Trim(),
             IsSpoiler = dto.IsSpoiler
         };
+
         await _reviewReplies.InsertOneAsync(reply, cancellationToken: ct);
 
         var outDto = new ReviewReplyDto
@@ -500,6 +501,7 @@ public async Task<IActionResult> VoteReview(string id, [FromBody] ReviewVoteDto 
             IsSpoiler = reply.IsSpoiler,
             CreatedAt = reply.CreatedAt
         };
+
         return CreatedAtAction(nameof(GetReplies), new { id, page = 1, pageSize = 1 }, outDto);
     }
 
@@ -518,11 +520,12 @@ public async Task<IActionResult> VoteReview(string id, [FromBody] ReviewVoteDto 
     }
 
     // POST /api/replies/{replyId}/vote  body: { userId, value }
+    [Authorize]
     [HttpPost("~/api/replies/{replyId}/vote")]
     public async Task<IActionResult> VoteReply(string replyId, [FromBody] ReviewVoteDto dto, CancellationToken ct = default)
     {
+        var userId = GetUserId(); // 👈 Token’dan al
         if (!ObjectId.TryParse(replyId, out _)) return BadRequest("Invalid reply id.");
-        if (!ObjectId.TryParse(dto.UserId, out _)) return BadRequest("Invalid user id.");
         if (dto.Value != 1 && dto.Value != -1) return BadRequest("Value must be 1 or -1.");
 
         var exists = await _reviewReplies.Find(r => r.Id == replyId && r.DeletedAt == null)
@@ -530,12 +533,12 @@ public async Task<IActionResult> VoteReview(string id, [FromBody] ReviewVoteDto 
         if (exists == null) return NotFound("Reply not found.");
 
         var filter = Builders<ReplyVote>.Filter.Eq(x => x.ReplyId, replyId) &
-                     Builders<ReplyVote>.Filter.Eq(x => x.UserId, dto.UserId);
+                     Builders<ReplyVote>.Filter.Eq(x => x.UserId, userId);
         var current = await _replyVotes.Find(filter).FirstOrDefaultAsync(ct);
 
         if (current == null)
         {
-            await _replyVotes.InsertOneAsync(new ReplyVote { ReplyId = replyId, UserId = dto.UserId, Value = dto.Value }, cancellationToken: ct);
+            await _replyVotes.InsertOneAsync(new ReplyVote { ReplyId = replyId, UserId = userId, Value = dto.Value }, cancellationToken: ct);
             return Ok(new { myVote = dto.Value });
         }
         else if (current.Value == dto.Value)
@@ -549,6 +552,7 @@ public async Task<IActionResult> VoteReview(string id, [FromBody] ReviewVoteDto 
             return Ok(new { myVote = dto.Value });
         }
     }
+
 
     // GET /api/reviews/{id}/voters
 [HttpGet("{id}/voters")]
