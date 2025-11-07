@@ -41,4 +41,78 @@ public class User
     public string? ProfileImageUrl { get; set; }
 
     public bool isBanned { get; set; }
+
+
+    public string? BannerUrl { get; set; }
+
+    public string[]? Platforms { get; set; }
+
+    public string? Badge { get; set; }
+
+    public string[]? Title { get; set; }
+
+    public string? City { get; set; }
+
+    public string[]? ContactUrl { get; set; }
+
+    public string? About { get; set; }
+
+    public string[]? Skills { get; set; }
+
+    public WorkExperience[]? Experiences { get; set; }
+
+    public ProjectItems[]? Projects { get; set; }
+
+
+    public Educations[]? Educations { get; set; }
+
+    public Awards[]? Awards { get; set; }
+
+    public string? FavoriteGenres { get; set; }
+}
+
+
+public class WorkExperience
+{
+    public string? Title { get; set; }
+    public string? Company { get; set; }
+
+    public DateTime? StartDate { get; set; }
+
+    public DateTime? FinishDate { get; set; }
+
+    public bool? isCurrent { get; set; }
+}
+
+
+public class ProjectItems
+{
+    public string? Title { get; set; }
+    public string? Game { get; set; }
+
+    public DateTime? StartDate { get; set; }
+
+    public DateTime? FinishDate { get; set; }
+
+    public bool? isCurrent { get; set; }
+}
+
+public class Educations
+{
+    public string? Department { get; set; }
+    public string? University { get; set; }
+
+    public DateTime? StartDate { get; set; }
+
+    public DateTime? FinishDate { get; set; }
+    public bool? isCurrent { get; set; }
+}
+
+public class Awards
+{
+    public string? Name { get; set; }
+    public string? Giving_Organization { get; set; }
+
+    public DateTime? ReceivedDate { get; set; }
+    public bool? isCurrent { get; set; }
 }

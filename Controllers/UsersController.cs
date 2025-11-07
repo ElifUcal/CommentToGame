@@ -8,14 +8,44 @@ using MongoDB.Driver;
 [Route("api/[controller]")]
 public class UsersController : ControllerBase
 {
-    private readonly IMongoCollection<User>? _users;
+    private readonly IMongoCollection<User> _users;
 
     public UsersController(MongoDbService db)
     {
         _users = db.GetCollection<User>("User"); // koleksiyon adın neyse
     }
 
-    // GET /api/users/{id}
+    
+    [HttpPost]
+    public async Task<IActionResult> Create([FromBody] User user, CancellationToken ct)
+    {
+        user.Createdat = DateTime.UtcNow;
+        await _users.InsertOneAsync(user, cancellationToken: ct);
+        return CreatedAtAction(nameof(GetById), new { id = user.Id }, user);
+    }
+
+   
+    [HttpGet]
+    public async Task<IActionResult> GetAll(CancellationToken ct)
+    {
+        var users = await _users
+            .Find(_ => true)
+            .Project(u => new
+            {
+                id = u.Id,
+                userName = u.UserName,
+                email = u.Email,
+                country = u.Country,
+                profileImageUrl = u.ProfileImageUrl,
+                userType = u.UserType,
+                isBanned = u.isBanned
+            })
+            .ToListAsync(ct);
+
+        return Ok(new { users });
+    }
+
+   
     [HttpGet("{id}")]
     public async Task<ActionResult<UserDto>> GetById(string id, CancellationToken ct)
     {
@@ -35,26 +65,55 @@ public class UsersController : ControllerBase
             isBanned = user.isBanned
         });
     }
+
     
-    // GET /api/users/basic?ids=1,2,3
-[HttpGet("basic")]
-public async Task<IActionResult> GetBasic([FromQuery] string ids, CancellationToken ct)
-{
-    var arr = (ids ?? "")
-        .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-        .Distinct()
-        .ToList();
-    if (arr.Count == 0) return Ok(new { users = Array.Empty<object>() });
+    [HttpGet("basic")]
+    public async Task<IActionResult> GetBasic([FromQuery] string ids, CancellationToken ct)
+    {
+        var arr = (ids ?? "")
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Distinct()
+            .ToList();
 
-    var users = await _users.Find(u => arr.Contains(u.Id))
-        .Project(u => new {
-            id = u.Id,
-            userName = u.UserName,
-            profileImageUrl = u.ProfileImageUrl
-        })
-        .ToListAsync(ct);
+        if (arr.Count == 0)
+            return Ok(new { users = Array.Empty<object>() });
 
-    return Ok(new { users });
-}
+        var users = await _users.Find(u => arr.Contains(u.Id))
+            .Project(u => new
+            {
+                id = u.Id,
+                userName = u.UserName,
+                profileImageUrl = u.ProfileImageUrl
+            })
+            .ToListAsync(ct);
 
+        return Ok(new { users });
+    }
+
+ 
+    [HttpPut("{id:length(24)}")]
+    public async Task<IActionResult> Update(string id, [FromBody] User updatedUser, CancellationToken ct)
+    {
+        var existing = await _users.Find(u => u.Id == id).FirstOrDefaultAsync(ct);
+        if (existing == null) return NotFound();
+
+        updatedUser.Id = id; // id sabit kalmalı
+        var result = await _users.ReplaceOneAsync(u => u.Id == id, updatedUser, cancellationToken: ct);
+
+        if (result.ModifiedCount == 0)
+            return BadRequest("User update failed.");
+
+        return NoContent();
+    }
+
+
+    [HttpDelete("{id:length(24)}")]
+    public async Task<IActionResult> Delete(string id, CancellationToken ct)
+    {
+        var result = await _users.DeleteOneAsync(u => u.Id == id, ct);
+        if (result.DeletedCount == 0)
+            return NotFound();
+
+        return NoContent();
+    }
 }

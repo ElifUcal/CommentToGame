@@ -1,0 +1,16 @@
+user gereklilikleri:
+1-profile pic
+2-banner
+3-plattroms
+4-Badge
+5- Title
+6- City
+7- Contacts
+8-about
+9- Skills 
+10- Work experiences
+11- Projects
+12- Education
+13-Awards
+14- Favorite Games
+15- Favorite Genres
