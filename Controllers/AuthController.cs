@@ -59,6 +59,7 @@ public class AuthController : ControllerBase
             Country = request.Country.Trim(),
             Createdat = DateTime.Now,
             isBanned = false,
+            
         };
 
         await _users.InsertOneAsync(user);
