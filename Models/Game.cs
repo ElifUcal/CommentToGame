@@ -42,7 +42,8 @@ public class Game
 
     public Image? Poster_Image { get; set; }
 
-    public Video? Poster_Video { get; set;}
+    public Video? Poster_Video { get; set; }
 
-    
+    public bool isUpcoming { get; set; } = false;
+
 }

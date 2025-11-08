@@ -93,6 +93,7 @@ public class PreviewImportService
         var gameFilter = Builders<Game>.Filter.Eq(x => x.Game_Name, dto.Name!.Trim());
         var gameUpdate = Builders<Game>.Update
             .Set(x => x.Release_Date, dto.ReleaseDate)
+            .Set(x => x.isUpcoming, dto?.ReleaseDate > DateTime.Now || dto?.ReleaseDate == null )
             .Set(x => x.Metacritic_Rating, dto.Metacritic)
             .Set(x => x.GgDb_Rating, dto.GgDbRating)
             .Set(x => x.Popularity, dto.Popularity)
