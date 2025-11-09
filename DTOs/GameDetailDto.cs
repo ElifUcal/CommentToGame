@@ -26,7 +26,7 @@ public class GameDetailDto
     public List<string> Tags { get; set; } = new();
     public List<DLCitem> Dlcs { get; set; } = new();
     public List<string> Crew { get; set; } = new();
-    public List<string>? Awards { get; set; }
+    public List<AwardInfo>? Awards { get; set; }
     public List<string> Engines { get; set; } = new();
 
     public string? MinRequirements { get; set; }

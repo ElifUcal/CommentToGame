@@ -15,17 +15,42 @@ public class IgdbImportService
         private readonly IMongoCollection<MinRequirement> _minReqs;     // IGDB sistem gereksinimi sağlamaz – boş kalabilir
         private readonly IMongoCollection<RecRequirement> _recReqs;     // IGDB sistem gereksinimi sağlamaz – boş kalabilir
 
-        public IgdbImportService(IIgdbClient igdb, MongoDbService svc)
-        {
-            _igdb = igdb;
-            var db = svc.Database!;
-            _games      = db.GetCollection<Game>("Games");
-            _details    = db.GetCollection<Game_Details>("GameDetails");
-            _genres     = db.GetCollection<Genre>("Genres");
-            _platforms  = db.GetCollection<Platform>("Platforms");
-            _minReqs    = db.GetCollection<MinRequirement>("MinRequirements");
-            _recReqs    = db.GetCollection<RecRequirement>("RecRequirements");
-        }
+    public IgdbImportService(IIgdbClient igdb, MongoDbService svc)
+    {
+        _igdb = igdb;
+        var db = svc.Database!;
+        _games = db.GetCollection<Game>("Games");
+        _details = db.GetCollection<Game_Details>("GameDetails");
+        _genres = db.GetCollection<Genre>("Genres");
+        _platforms = db.GetCollection<Platform>("Platforms");
+        _minReqs = db.GetCollection<MinRequirement>("MinRequirements");
+        _recReqs = db.GetCollection<RecRequirement>("RecRequirements");
+    }
+
+       
+            private static List<AwardInfo> ParseAwards(IEnumerable<string> rawAwards)
+            {
+                var list = new List<AwardInfo>();
+                var regex = new System.Text.RegularExpressions.Regex(@"\b(19|20)\d{2}\b");
+
+                foreach (var raw in rawAwards)
+                {
+                    if (string.IsNullOrWhiteSpace(raw)) continue;
+                    var parts = raw.Split('-', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                    var info = new AwardInfo();
+
+                    var year = regex.Match(raw);
+                    if (year.Success) info.Year = int.Parse(year.Value);
+
+                    info.Title = System.Globalization.CultureInfo.CurrentCulture.TextInfo.ToTitleCase(parts[0]);
+                    if (parts.Length > 1 && !regex.IsMatch(parts[1])) info.Category = parts[1];
+                    if (parts.Length > 2) info.Result = parts[2];
+
+                    list.Add(info);
+                }
+
+                return list;
+            }
 
         // RAWG: ImportAsync muadili – IGDB sayfalı listeyi çekip kaydeder
         public async Task<int> ImportAsync(int pages = 1, int pageSize = 40, CancellationToken ct = default)
@@ -139,31 +164,33 @@ public class IgdbImportService
             var ageRatingNames = detail.AgeRatings.Distinct().ToList();
             var tagNames = detail.Tags.Distinct().ToList();
             var ttb = await _igdb.GetTimeToBeatAsync(detail.Id, ct);
-            var awards = detail.Awards?.Distinct().ToList() ?? new List<string>();
-            
-            
 
 
-            
-            
-            var detUpdate = Builders<Game_Details>.Update
-                .Set(x => x.Developer, developer)
-                .Set(x => x.Publisher, publisher)
-                .Set(x => x.GenreIds, genreIds)
-                .Set(x => x.PlatformIds, platformIds)
-                .Set(x => x.Story, detail.Summary)
-                .Set(x => x.Age_Ratings, ageRatingNames)
-                .Set(x => x.Tags, tagNames)
-                .Set(x => x.Engines, detail.Engines)
-                .Set(x => x.Audio_Language, detail.AudioLanguages ?? new List<string>())
-                .Set(x => x.Subtitles, detail.Subtitles ?? new List<string>())
-                .Set(x => x.Interface_Language, detail.InterfaceLanguages ?? new List<string>())
-                .Set(x => x.Content_Warnings, detail.ContentWarnings ?? new List<string>())
-                .SetOnInsert(x => x.GameId, gameFromDb.Id)
-                .SetOnInsert(x => x.Id, ObjectId.GenerateNewId().ToString());
 
-       if (awards.Count > 0)
-    detUpdate = detUpdate.Set(x => x.Awards, awards);
+
+
+
+        var detUpdate = Builders<Game_Details>.Update
+            .Set(x => x.Developer, developer)
+            .Set(x => x.Publisher, publisher)
+            .Set(x => x.GenreIds, genreIds)
+            .Set(x => x.PlatformIds, platformIds)
+            .Set(x => x.Story, detail.Summary)
+            .Set(x => x.Age_Ratings, ageRatingNames)
+            .Set(x => x.Tags, tagNames)
+            .Set(x => x.Engines, detail.Engines)
+            .Set(x => x.Audio_Language, detail.AudioLanguages ?? new List<string>())
+            .Set(x => x.Subtitles, detail.Subtitles ?? new List<string>())
+            .Set(x => x.Interface_Language, detail.InterfaceLanguages ?? new List<string>())
+            .Set(x => x.Content_Warnings, detail.ContentWarnings ?? new List<string>())
+            .SetOnInsert(x => x.GameId, gameFromDb.Id)
+            .SetOnInsert(x => x.Id, ObjectId.GenerateNewId().ToString());
+
+                
+            var parsedAwards = ParseAwards(detail.Awards ?? new List<string>());
+            if (parsedAwards.Count > 0)
+                detUpdate = detUpdate.Set(x => x.Awards, parsedAwards);
+    
 
         if (ttb != null)
         {

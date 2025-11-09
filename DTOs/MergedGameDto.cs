@@ -42,7 +42,7 @@ public sealed class MergedGameDto
     public int? TimeToBeatCompletely { get; set; }
 
     public List<string> Engines { get; set; } = new();
-    public List<string> Awards { get; set; } = new();
+    public List<AwardInfo> Awards { get; set; } = new();
 
     // Cast/Crew (RAWGa göre)
     public List<string> Cast { get; set; } = new();

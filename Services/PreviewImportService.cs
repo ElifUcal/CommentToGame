@@ -181,8 +181,8 @@ if (dto.Dlcs != null) // null ise hiç dokunma; boş [] gelirse temizle
 
         
 
-        if (dto.Awards is { Count: > 0 })
-            updates.Add(ub.Set(x => x.Awards, dto.Awards.Distinct().ToList()));
+            if (dto.Awards != null)
+            updates.Add(ub.Set(x => x.Awards, dto.Awards));
 
         if (dto.TimeToBeat != null)
         {

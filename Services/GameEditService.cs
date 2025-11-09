@@ -16,12 +16,38 @@ public sealed class GameEditService
     public GameEditService(MongoDbService db)
     {
         var database = db.Database!;
-        _games      = database.GetCollection<Game>("Games");
-        _details    = database.GetCollection<Game_Details>("GameDetails");
-        _genres     = database.GetCollection<Genre>("Genres");
-        _platforms  = database.GetCollection<Platform>("Platforms");
-        _minReqs    = database.GetCollection<MinRequirement>("MinRequirements");
-        _recReqs    = database.GetCollection<RecRequirement>("RecRequirements");
+        _games = database.GetCollection<Game>("Games");
+        _details = database.GetCollection<Game_Details>("GameDetails");
+        _genres = database.GetCollection<Genre>("Genres");
+        _platforms = database.GetCollection<Platform>("Platforms");
+        _minReqs = database.GetCollection<MinRequirement>("MinRequirements");
+        _recReqs = database.GetCollection<RecRequirement>("RecRequirements");
+    }
+
+
+
+     private static List<AwardInfo> ParseAwards(IEnumerable<string> rawAwards)
+    {
+        var list = new List<AwardInfo>();
+        var regex = new System.Text.RegularExpressions.Regex(@"\b(19|20)\d{2}\b");
+
+        foreach (var raw in rawAwards)
+        {
+            if (string.IsNullOrWhiteSpace(raw)) continue;
+            var parts = raw.Split('-', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            var info = new AwardInfo();
+
+            var year = regex.Match(raw);
+            if (year.Success) info.Year = int.Parse(year.Value);
+
+            info.Title = System.Globalization.CultureInfo.CurrentCulture.TextInfo.ToTitleCase(parts[0]);
+            if (parts.Length > 1 && !regex.IsMatch(parts[1])) info.Category = parts[1];
+            if (parts.Length > 2) info.Result = parts[2];
+
+            list.Add(info);
+        }
+
+        return list;
     }
 
     public async Task<bool> UpdateByNameAsync(string name, UpdateGameDto body, CancellationToken ct = default)
@@ -38,14 +64,14 @@ public sealed class GameEditService
         var G = Builders<Game>.Update;
 
         if (body.ReleaseDate.HasValue) gUpdates.Add(G.Set(x => x.Release_Date, body.ReleaseDate));
-        if (body.Metacritic.HasValue)  gUpdates.Add(G.Set(x => x.Metacritic_Rating, body.Metacritic));
-        if (body.GgDbRating.HasValue)  gUpdates.Add(G.Set(x => x.GgDb_Rating, body.GgDbRating));
-        if (body.Popularity.HasValue)  gUpdates.Add(G.Set(x => x.Popularity, body.Popularity));
+        if (body.Metacritic.HasValue) gUpdates.Add(G.Set(x => x.Metacritic_Rating, body.Metacritic));
+        if (body.GgDbRating.HasValue) gUpdates.Add(G.Set(x => x.GgDb_Rating, body.GgDbRating));
+        if (body.Popularity.HasValue) gUpdates.Add(G.Set(x => x.Popularity, body.Popularity));
         if (body.Cast != null) gUpdates.Add(G.Set(x => x.Cast, body.Cast));
         if (body.Crew != null) gUpdates.Add(G.Set(x => x.Crew, body.Crew));
         if (!string.IsNullOrWhiteSpace(body.MainImage)) gUpdates.Add(G.Set(x => x.Main_image_URL, body.MainImage));
-        if (!string.IsNullOrWhiteSpace(body.Studio))    gUpdates.Add(G.Set(x => x.Studio, body.Studio));
-        if (!string.IsNullOrWhiteSpace(body.Name))      gUpdates.Add(G.Set(x => x.Game_Name, body.Name!.Trim()));
+        if (!string.IsNullOrWhiteSpace(body.Studio)) gUpdates.Add(G.Set(x => x.Studio, body.Studio));
+        if (!string.IsNullOrWhiteSpace(body.Name)) gUpdates.Add(G.Set(x => x.Game_Name, body.Name!.Trim()));
 
         if (gUpdates.Count > 0)
             await _games.UpdateOneAsync(gFilter, Builders<Game>.Update.Combine(gUpdates), cancellationToken: ct);
@@ -68,10 +94,10 @@ public sealed class GameEditService
         // düz alanlar
         if (!string.IsNullOrWhiteSpace(body.Developer)) dUpdates.Add(D.Set(x => x.Developer, body.Developer));
         if (!string.IsNullOrWhiteSpace(body.Publisher)) dUpdates.Add(D.Set(x => x.Publisher, body.Publisher));
-        if (!string.IsNullOrWhiteSpace(body.About))     dUpdates.Add(D.Set(x => x.Story, body.About));
+        if (!string.IsNullOrWhiteSpace(body.About)) dUpdates.Add(D.Set(x => x.Story, body.About));
 
         // listeler (null => dokunma empty => temizle)
-        if (body.AgeRatings != null)      dUpdates.Add(D.Set(x => x.Age_Ratings, body.AgeRatings.Distinct().ToList()));
+        if (body.AgeRatings != null) dUpdates.Add(D.Set(x => x.Age_Ratings, body.AgeRatings.Distinct().ToList()));
         if (body.Dlcs != null)
         {
             // Eğer frontend sadece string listesi gönderiyorsa, bunu DLCitem'e dönüştür
@@ -91,33 +117,36 @@ public sealed class GameEditService
         }
 
 
-        if (body.Tags != null)            dUpdates.Add(D.Set(x => x.Tags, body.Tags.Distinct().ToList()));
-        if (body.AudioLanguages != null)  dUpdates.Add(D.Set(x => x.Audio_Language, body.AudioLanguages.Distinct().ToList()));
-        if (body.Subtitles != null)       dUpdates.Add(D.Set(x => x.Subtitles, body.Subtitles.Distinct().ToList()));
+        if (body.Tags != null) dUpdates.Add(D.Set(x => x.Tags, body.Tags.Distinct().ToList()));
+        if (body.AudioLanguages != null) dUpdates.Add(D.Set(x => x.Audio_Language, body.AudioLanguages.Distinct().ToList()));
+        if (body.Subtitles != null) dUpdates.Add(D.Set(x => x.Subtitles, body.Subtitles.Distinct().ToList()));
         if (body.InterfaceLanguages != null) dUpdates.Add(D.Set(x => x.Interface_Language, body.InterfaceLanguages.Distinct().ToList()));
         if (body.ContentWarnings != null) dUpdates.Add(D.Set(x => x.Content_Warnings, body.ContentWarnings.Distinct().ToList()));
-        if (body.Engines != null)         dUpdates.Add(D.Set(x => x.Engines, body.Engines.Distinct().ToList()));
-        if (body.Awards != null)          dUpdates.Add(D.Set(x => x.Awards, body.Awards.Distinct().ToList()));
+        if (body.Engines != null) dUpdates.Add(D.Set(x => x.Engines, body.Engines.Distinct().ToList()));
+        if (body.Awards is { Count: > 0 })
+            {
+                dUpdates.Add(D.Set(x => x.Awards, body.Awards));
+            }
 
         // Mağaza linkleri
         if (body.StoreLinks != null)
         {
             var mapped = body.StoreLinks.Select(s => new StoreLink
             {
-                StoreId    = s.StoreId,
-                Store      = s.Store,
-                Slug       = s.Slug,
-                Domain     = s.Domain,
-                Url        = s.Url,
+                StoreId = s.StoreId,
+                Store = s.Store,
+                Slug = s.Slug,
+                Domain = s.Domain,
+                Url = s.Url,
                 ExternalId = s.ExternalId
             }).ToList();
             dUpdates.Add(D.Set(x => x.Store_Links, mapped));
         }
 
         // TimeToBeat (saat)
-        if (body.TimeToBeatHastily.HasValue)   dUpdates.Add(D.Set(x => x.TimeToBeat_Hastily, body.TimeToBeatHastily));
-        if (body.TimeToBeatNormally.HasValue)  dUpdates.Add(D.Set(x => x.TimeToBeat_Normally, body.TimeToBeatNormally));
-        if (body.TimeToBeatCompletely.HasValue)dUpdates.Add(D.Set(x => x.TimeToBeat_Completely, body.TimeToBeatCompletely));
+        if (body.TimeToBeatHastily.HasValue) dUpdates.Add(D.Set(x => x.TimeToBeat_Hastily, body.TimeToBeatHastily));
+        if (body.TimeToBeatNormally.HasValue) dUpdates.Add(D.Set(x => x.TimeToBeat_Normally, body.TimeToBeatNormally));
+        if (body.TimeToBeatCompletely.HasValue) dUpdates.Add(D.Set(x => x.TimeToBeat_Completely, body.TimeToBeatCompletely));
 
         // Genres/Platforms isimden IDye upsert
         if (body.Genres != null)

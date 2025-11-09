@@ -59,7 +59,7 @@ namespace CommentToGame.Services
 
             public TimeToBeatDto TimeToBeat { get; set; } = new();
             public List<string> Engines { get; set; } = new();
-            public List<string> Awards { get; set; } = new();
+            public List<AwardInfo> Awards { get; set; } = new();
 
             public List<string> Cast { get; set; } = new();
             public List<string> Crew { get; set; } = new();
@@ -191,7 +191,7 @@ if (pc?.Requirements != null)
             }
 
             dto.Engines = (igdb?.Engines ?? Enumerable.Empty<string>()).WhereNotEmpty().Distinct().ToList();
-            dto.Awards = (igdb?.Awards ?? Enumerable.Empty<string>()).WhereNotEmpty().Distinct().ToList();
+            dto.Awards = ParseAwards((igdb?.Awards ?? Enumerable.Empty<string>()).WhereNotEmpty());
 
             if (rawgCast  is not null) dto.Cast = ToDistinctList(rawgCast);
             if (rawgCrew  is not null) dto.Crew = ToDistinctList(rawgCrew);
@@ -627,6 +627,32 @@ if (!string.IsNullOrWhiteSpace(mainImageUrl))
 
             return sb.ToString().TrimEnd(); // sonda \n olmasın
         }
+
+        private static List<AwardInfo> ParseAwards(IEnumerable<string> rawAwards)
+        {
+            var list = new List<AwardInfo>();
+            var regex = new Regex(@"\b(19|20)\d{2}\b");
+
+            foreach (var raw in rawAwards)
+            {
+                if (string.IsNullOrWhiteSpace(raw)) continue;
+                var parts = raw.Split('-', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                var info = new AwardInfo();
+
+                var year = regex.Match(raw);
+                if (year.Success)
+                    info.Year = int.Parse(year.Value);
+
+                info.Title = CultureInfo.CurrentCulture.TextInfo.ToTitleCase(parts[0]);
+                if (parts.Length > 1 && !regex.IsMatch(parts[1])) info.Category = parts[1];
+                if (parts.Length > 2) info.Result = parts[2];
+
+                list.Add(info);
+            }
+
+            return list;
+        }
+
 
     }
 }

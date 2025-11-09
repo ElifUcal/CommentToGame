@@ -22,6 +22,7 @@ public class RawgImportService
     private readonly IMongoCollection<RecRequirement> _recReqs;
 
 
+    
     public RawgImportService(IRawgClient rawg, MongoDbService svc)
     {
         _rawg = rawg;
@@ -32,6 +33,30 @@ public class RawgImportService
         _platforms = db.GetCollection<Platform>("Platforms");
         _minReqs = db.GetCollection<MinRequirement>("MinRequirements");
         _recReqs = db.GetCollection<RecRequirement>("RecRequirements");
+    }
+
+    private static List<AwardInfo> ParseAwards(IEnumerable<string> rawAwards)
+    {
+        var list = new List<AwardInfo>();
+        var regex = new System.Text.RegularExpressions.Regex(@"\b(19|20)\d{2}\b");
+
+        foreach (var raw in rawAwards)
+        {
+            if (string.IsNullOrWhiteSpace(raw)) continue;
+            var parts = raw.Split('-', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            var info = new AwardInfo();
+
+            var year = regex.Match(raw);
+            if (year.Success) info.Year = int.Parse(year.Value);
+
+            info.Title = System.Globalization.CultureInfo.CurrentCulture.TextInfo.ToTitleCase(parts[0]);
+            if (parts.Length > 1 && !regex.IsMatch(parts[1])) info.Category = parts[1];
+            if (parts.Length > 2) info.Result = parts[2];
+
+            list.Add(info);
+        }
+
+        return list;
     }
 
     public async Task<int> ImportAsync(int pages = 1, int pageSize = 40)
@@ -371,15 +396,10 @@ if (!string.IsNullOrWhiteSpace(detail?.DescriptionRaw))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
 
+         var parsedAwards = ParseAwards(awardsFinal);
+
         // detUpdate oluştururken:
-        detUpdate = detUpdate
-            .Set(x => x.Awards, awardsFinal);
-
-
-
-
-
-
+         detUpdate = detUpdate.Set(x => x.Awards, parsedAwards);
 
 
         // (opsiyonel) Series: isim listesini DLCs ya da Tags içine basabiliriz

@@ -44,7 +44,7 @@ namespace CommentToGame.DTOs
 
         // Engine(ler) & Ödüller
         public List<string>? Engines { get; set; }
-        public List<string>? Awards { get; set; }
+        public List<AwardInfo>? Awards { get; set; }
 
         public List<string>? Cast { get; set; }
         public List<string>? Crew { get; set; }
