@@ -99,6 +99,8 @@ public class PreviewImportService
             .Set(x => x.Popularity, dto.Popularity)
             .Set(x => x.Main_image_URL, dto.MainImage)
             .Set(x => x.CompanyIds, new List<string>())
+            
+            
                         
             .SetOnInsert(x => x.Game_Name, dto.Name!.Trim())
             .SetOnInsert(x => x.Id, ObjectId.GenerateNewId().ToString())

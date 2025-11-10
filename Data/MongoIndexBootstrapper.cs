@@ -20,7 +20,7 @@ public static class MongoIndexBootstrapper
         var companies    = db.GetCollection<Company>("Companies");
         var timeToBeat   = db.GetCollection<Time_To_Beat>("TimeToBeat");
         var users        = db.GetCollection<User>("User");
-        var reviews      = db.GetCollection<Reviews>("Reviews");   // ✅ YENİ EKLENDİ
+        var reviews      = db.GetCollection<Reviews>("Reviews");   
 
         // Case-insensitive unique için collation (EN, strength: Secondary)
         var ci = new Collation("en", strength: CollationStrength.Secondary);

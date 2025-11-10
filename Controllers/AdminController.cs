@@ -347,6 +347,7 @@ public class AdminController : ControllerBase
             Cover = game.Main_image_URL,
             Video = game.Main_video_URL,
             Cast = game.Cast,
+            Dictionary = game.Dictionary,
 
             Developer = details?.Developer,
             Publisher = details?.Publisher,
@@ -434,6 +435,7 @@ public class AdminController : ControllerBase
             game.Crew = dto.Crew ?? new List<string>();
             game.Soundtrack = dto.Soundtrack ?? new List<string>();
             game.Cast = dto.Cast ?? new List<string>();
+            game.Dictionary = dto.Dictionary ?? new List<string>();
 
             if (dto.Featured_Section_Background != null)
                 game.Featured_Section_Background = MapImageDto(dto.Featured_Section_Background, game.Featured_Section_Background);

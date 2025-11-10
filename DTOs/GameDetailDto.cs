@@ -71,6 +71,8 @@ public class GameDetailDto
 
     public string? InspiredBy { get; set; }
 
+    public List<string>? Dictionary { get; set; }
+
 
 }
 

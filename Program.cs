@@ -63,6 +63,11 @@ builder.Services.AddSingleton<IgdbAuthService>();
 builder.Services.AddSingleton<IIgdbClient, IgdbClient>();
 builder.Services.AddSingleton<IgdbImportService>();
 builder.Services.AddSingleton<GameEditService>();
+builder.Services.AddScoped<SearchService>();
+// 🔹 Logging ayarları (ekle)
+builder.Logging.ClearProviders();
+builder.Logging.AddConsole();
+builder.Logging.SetMinimumLevel(LogLevel.Debug);
 
 // 🔧 Log servisi
 builder.Services.AddScoped<SystemLogService>();

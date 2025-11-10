@@ -46,4 +46,6 @@ public class Game
 
     public bool isUpcoming { get; set; } = false;
 
+    public List<string>? Dictionary { get; set; }
+
 }

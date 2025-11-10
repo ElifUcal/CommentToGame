@@ -9,22 +9,21 @@ public class ExceptionLoggingMiddleware
     private readonly RequestDelegate _next;
     public ExceptionLoggingMiddleware(RequestDelegate next) { _next = next; }
 
-    public async Task Invoke(HttpContext ctx, ISystemLogger slog)
-    {
-        try
+   public async Task InvokeAsync(HttpContext context)
         {
-            await _next(ctx);
-        }
-        catch (Exception ex)
-        {
-            var user = ctx.User?.Identity?.Name ?? "anonymous";
-            await slog.ErrorAsync(SystemLogCategory.System, $"Unhandled exception: {ex.Message}", user, new Dictionary<string,string>{
-                ["path"] = ctx.Request.Path,
-                ["method"] = ctx.Request.Method
-            });
+            try
+            {
+                await _next(context);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"🔥 Middleware yakaladı: {ex.Message}");
+                Console.WriteLine(ex.StackTrace);
 
-            ctx.Response.StatusCode = (int)HttpStatusCode.InternalServerError;
-            await ctx.Response.WriteAsJsonAsync(new { error = "Unexpected server error." });
+                context.Response.StatusCode = 500;
+                context.Response.ContentType = "application/json";
+                await context.Response.WriteAsJsonAsync(new { error = ex.Message });
+            }
         }
-    }
+
 }
