@@ -18,6 +18,8 @@ builder.Logging.SetMinimumLevel(LogLevel.Debug);
 // ----- SERVICES -----
 builder.Services.AddSingleton<MongoDbService>();
 builder.Services.AddSingleton<PreviewImportService>();
+builder.Services.AddSingleton<SettingsRepository>();
+
 
 // JWT
 var jwtKey = builder.Configuration.GetValue<string>("Jwt:Key")
