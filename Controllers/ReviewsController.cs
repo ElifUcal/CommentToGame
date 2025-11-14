@@ -21,13 +21,16 @@ namespace CommentToGame.Controllers;
         private readonly IMongoCollection<ReviewReply> _reviewReplies;
         private readonly IMongoCollection<ReplyVote> _replyVotes;
 
-    public ReviewsController(MongoDbService db)
+        private readonly INotificationService _notifications;
+
+    public ReviewsController(MongoDbService db,INotificationService notifications)
     {
         // Projene göre adı değiştir: "reviews"
         _reviews = db.GetCollection<Reviews>("reviews");
         _reviewVotes = db.GetCollection<ReviewVote>("review_votes");
         _reviewReplies = db.GetCollection<ReviewReply>("review_replies");
         _replyVotes = db.GetCollection<ReplyVote>("reply_votes");
+        _notifications = notifications;
     }
         
     private string GetUserId()
@@ -478,8 +481,9 @@ public async Task<ActionResult<PagedResult<ReviewViewDto>>> GetGameReviews(
         if (!ObjectId.TryParse(id, out _)) return BadRequest("Invalid review id.");
         if (string.IsNullOrWhiteSpace(dto.Comment)) return BadRequest("Comment required.");
 
-        var exists = await _reviews.Find(r => r.Id == id).Project(r => r.Id).FirstOrDefaultAsync(ct);
-        if (exists == null) return NotFound("Review not found.");
+        var review = await _reviews.Find(r => r.Id == id).FirstOrDefaultAsync(ct);
+        if (review == null) return NotFound("Review not found.");
+
 
         var reply = new ReviewReply
         {
@@ -491,6 +495,23 @@ public async Task<ActionResult<PagedResult<ReviewViewDto>>> GetGameReviews(
         };
 
         await _reviewReplies.InsertOneAsync(reply, cancellationToken: ct);
+
+        if (review.UserId != userId)
+        {
+            await _notifications.CreateAsync(
+                userId: review.UserId,                 // bildirimi alacak kişi = yorumun sahibi
+                type: "REVIEW_REPLY",                  // senin belirlediğin bir string
+                title: "Yorumuna yeni bir yanıt var",  // bildirim başlığı
+                message: "Yorumuna yeni bir cevap yazıldı.", // kısa açıklama
+                data: new                              
+                {
+                    reviewId = review.Id,
+                    replyId = reply.Id,
+                    gameId = review.GameId
+                },
+                ct: ct
+            );
+        }
 
         var outDto = new ReviewReplyDto
         {

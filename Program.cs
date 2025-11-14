@@ -7,6 +7,8 @@ using Microsoft.OpenApi.Models;
 using System.Security.Claims;
 using System.Text;
 using System.Text.Json.Serialization;
+using CommentToGame.Hubs;
+
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -14,12 +16,13 @@ builder.Logging.ClearProviders();
 builder.Logging.AddConsole();
 builder.Logging.SetMinimumLevel(LogLevel.Debug);
 
+builder.Services.AddSignalR();
 
 // ----- SERVICES -----
 builder.Services.AddSingleton<MongoDbService>();
 builder.Services.AddSingleton<PreviewImportService>();
 builder.Services.AddSingleton<SettingsRepository>();
-
+builder.Services.AddScoped<INotificationService, NotificationService>();
 
 // JWT
 var jwtKey = builder.Configuration.GetValue<string>("Jwt:Key")
@@ -134,6 +137,8 @@ if (app.Environment.IsDevelopment())
 {
     app.UseDeveloperExceptionPage(); // <- ekle
 }
+
+app.MapHub<NotificationHub>("/hubs/notifications");
 
 // ----- MIDDLEWARE -----
 if (app.Environment.IsDevelopment())

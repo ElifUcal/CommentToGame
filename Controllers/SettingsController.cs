@@ -29,19 +29,24 @@ public class SettingsController : ControllerBase
     }
 
     // Binary upload'u ayır: URL döndür (S3/Cloudinary vs.)
-    [HttpPost("favicon")]
-    [RequestSizeLimit(1_000_000)]
-    public async Task<IActionResult> UploadFavicon([FromForm] IFormFile file, CancellationToken ct)
-    {
-        if (file == null || file.Length == 0) return BadRequest("No file");
-        if (!new[] { "image/x-icon", "image/png" }.Contains(file.ContentType)) return BadRequest("Only .ico or .png");
-        // örnek: local kaydetme (prod’da S3, Cloudinary kullan)
-        var name = $"favicon_{DateTime.UtcNow.Ticks}{Path.GetExtension(file.FileName)}";
-        var path = Path.Combine("wwwroot", "uploads", name);
-        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        await using var fs = System.IO.File.Create(path);
-        await file.CopyToAsync(fs, ct);
-        var url = $"/uploads/{name}";
-        return Ok(new { url });
-    }
+   [HttpPost("favicon")]
+[RequestSizeLimit(1_000_000)]
+[Consumes("multipart/form-data")] // opsiyonel ama güzel
+public async Task<IActionResult> UploadFavicon(IFormFile file, CancellationToken ct)
+{
+    if (file == null || file.Length == 0) return BadRequest("No file");
+    if (!new[] { "image/x-icon", "image/png" }.Contains(file.ContentType))
+        return BadRequest("Only .ico or .png");
+
+    var name = $"favicon_{DateTime.UtcNow.Ticks}{Path.GetExtension(file.FileName)}";
+    var path = Path.Combine("wwwroot", "uploads", name);
+    Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+
+    await using var fs = System.IO.File.Create(path);
+    await file.CopyToAsync(fs, ct);
+
+    var url = $"/uploads/{name}";
+    return Ok(new { url });
+}
+
 }
