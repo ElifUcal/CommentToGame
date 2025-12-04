@@ -68,7 +68,17 @@ public class User
 
     public Awards[]? Awards { get; set; }
 
-    public string? FavoriteGenres { get; set; }
+    public List<string>? FavoriteGenres { get; set; }
+
+    public string? Name { get; set; }
+
+    public string? Surname { get; set; }
+
+    public List<string>? FavConsoles { get; set; }
+
+    public Equipment? Equipment { get; set; }
+
+    public string? CareerGoal { get; set; }
 }
 
 
@@ -115,4 +125,25 @@ public class Awards
 
     public DateTime? ReceivedDate { get; set; }
     public bool? isCurrent { get; set; }
+}
+
+public class Equipment
+{
+    public string? OS { get; set; }
+    public string? CPU { get; set; }
+
+    public string? GPU { get; set; }
+
+    public string? RAM { get; set; }
+
+    public string? Motherboard { get; set; }
+    public string? Case { get; set; }
+
+    public string? Storage { get; set; }
+
+    public string? Keyboard { get; set; }
+
+    public string? Mouse { get; set; }
+
+    public string? Monitor { get; set; }
 }

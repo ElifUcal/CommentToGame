@@ -85,7 +85,7 @@ namespace CommentToGame.Controllers;
         }
 
 
-    [HttpGet("byGame/{gameId}")]
+   [HttpGet("byGame/{gameId}")]
 public async Task<ActionResult<PagedResult<ReviewViewDto>>> GetGameReviews(
     string gameId,
     [FromQuery] int page = 1,
@@ -131,57 +131,112 @@ public async Task<ActionResult<PagedResult<ReviewViewDto>>> GetGameReviews(
         { "ReplyCount", new BsonDocument("$size", "$replies") }
     });
 
-    BsonDocument addMyVote =
-        string.IsNullOrWhiteSpace(viewerUserId)
-        ? new BsonDocument("$addFields", new BsonDocument("MyVote", 0))
-        : (ObjectId.TryParse(viewerUserId, out var viewerOid)
-            ? new BsonDocument("$addFields", new BsonDocument("MyVote",
-                new BsonDocument("$let", new BsonDocument {
-                    { "vars", new BsonDocument("mv",
-                        new BsonDocument("$first",
-                            new BsonDocument("$filter", new BsonDocument {
-                                { "input", "$votes" },
-                                { "as", "v" },
-                                { "cond", new BsonDocument("$eq", new BsonArray { "$$v.UserId", viewerOid }) }
-                            })
+    // 🔥 BURASI YENİ: viewerOid'i ya query'den ya da JWT'den çekiyoruz
+    ObjectId? viewerOid = null;
+
+    if (!string.IsNullOrWhiteSpace(viewerUserId))
+    {
+        // istersen burayı tamamen kaldırabilirsin; şimdilik destekli kalsın
+        if (!ObjectId.TryParse(viewerUserId, out var parsed))
+            return BadRequest("Invalid viewerUserId.");
+        viewerOid = parsed;
+    }
+    else
+    {
+        // query yoksa JWT'deki "id" / NameIdentifier claim'ine bak
+        var claimId = User.Claims.FirstOrDefault(c =>
+            c.Type == ClaimTypes.NameIdentifier || c.Type == "id")?.Value;
+
+        if (!string.IsNullOrWhiteSpace(claimId) &&
+            ObjectId.TryParse(claimId, out var parsedFromToken))
+        {
+            viewerOid = parsedFromToken;
+        }
+    }
+
+    BsonDocument addMyVote;
+
+    if (viewerOid == null)
+    {
+        // login değilse ya da id yoksa: herkes için MyVote = 0
+        addMyVote = new BsonDocument("$addFields", new BsonDocument("MyVote", 0));
+    }
+    else
+    {
+        // login kullanıcı için kendi oyunu bul
+        addMyVote = new BsonDocument("$addFields",
+            new BsonDocument("MyVote",
+                new BsonDocument("$let", new BsonDocument
+                {
+                    {
+                        "vars",
+                        new BsonDocument("mv",
+                            new BsonDocument("$first",
+                                new BsonDocument("$filter", new BsonDocument
+                                {
+                                    { "input", "$votes" },
+                                    { "as", "v" },
+                                    { "cond", new BsonDocument("$eq",
+                                        new BsonArray { "$$v.UserId", viewerOid.Value })
+                                    }
+                                })
+                            )
                         )
-                    )},
+                    },
                     { "in", new BsonDocument("$ifNull", new BsonArray { "$$mv.Value", 0 }) }
                 })
-            ))
-            : throw new ArgumentException("Invalid viewerUserId."));
+            )
+        );
+    }
 
     var sort = new BsonDocument("$sort", new BsonDocument("_id", -1));
 
-    // PROJECTION: hem PascalCase hem camelCase ihtimaline göre PascalCase üretelim
-    var facet = new BsonDocument("$facet", new BsonDocument {
-      { "items", new BsonArray {
-        new BsonDocument("$skip", (page - 1) * pageSize),
-        new BsonDocument("$limit", pageSize),
-        new BsonDocument("$project", new BsonDocument {
-          { "_id", 0 },
-          { "Id",        new BsonDocument("$toString", "$_id") },        // <-- düzeltildi
-          { "GameId",    new BsonDocument("$toString", "$GameId") },
-          { "UserId",    new BsonDocument("$toString", "$UserId") },
-          { "StarCount", "$StarCount" },
-          { "Comment",   "$Comment" },
-          { "IsSpoiler", "$isSpoiler" },
-          { "TodayDate", "$TodayDate" },
-          { "LikeCount", 1 },
-          { "DislikeCount", 1 },
-          { "MyVote", 1 },
-          { "ReplyCount", 1 }
-        })
-      }},
-      { "count", new BsonArray { new BsonDocument("$count", "total") } }
-    });
+   var project = new BsonDocument("$project", new BsonDocument {
+    { "_id", 0 },
+    { "Id",        new BsonDocument("$toString", "$_id") },
+    { "GameId",    new BsonDocument("$toString", "$GameId") },
+    { "UserId",    new BsonDocument("$toString", "$UserId") },
+    { "StarCount", "$StarCount" },
+    { "Comment",   "$Comment" },
+    { "IsSpoiler", "$isSpoiler" },
+    { "TodayDate", "$TodayDate" },
+    { "LikeCount", 1 },
+    { "DislikeCount", 1 },
+    { "MyVote", 1 },
+    { "ReplyCount", 1 }
+});
 
-    var pipeline = new[] { match, lookupVotes, lookupReplies, addFields, addMyVote, sort, facet };
+// 🔥 sadece o sayfadaki item’lara lookup
+var itemsPipeline = new BsonArray
+{
+    sort,
+    new BsonDocument("$skip", (page - 1) * pageSize),
+    new BsonDocument("$limit", pageSize),
+    lookupVotes,
+    lookupReplies,
+    addFields,
+    addMyVote,
+    project
+};
+
+// 🔥 count tarafında lookup yok, sadece sayım
+var countPipeline = new BsonArray
+{
+    new BsonDocument("$count", "total")
+};
+
+var facet = new BsonDocument("$facet", new BsonDocument
+{
+    { "items", itemsPipeline },
+    { "count", countPipeline }
+});
+
+    var pipeline = new[] { match, facet };
 
     var result = await _reviews.Aggregate<BsonDocument>(pipeline, cancellationToken: ct)
                                .FirstOrDefaultAsync(ct);
 
-    // ----- Manuel Map -----
+    // ----- Manuel Map ----- (buradan sonrası aynı)
     static string GetStr(BsonDocument d, string p, string c) =>
         d.TryGetValue(p, out var v1) ? (v1.IsString ? v1.AsString : v1.ToString()) :
         d.TryGetValue(c, out var v2) ? (v2.IsString ? v2.AsString : v2.ToString()) : string.Empty;
@@ -237,6 +292,7 @@ public async Task<ActionResult<PagedResult<ReviewViewDto>>> GetGameReviews(
         Items = items
     });
 }
+
 
 
 
@@ -379,7 +435,7 @@ public async Task<ActionResult<PagedResult<ReviewViewDto>>> GetGameReviews(
 
 
     // POST /api/reviews/{id}/vote  body: { userId, value = 1 | -1 }
-[Authorize]
+    [Authorize]
     [HttpPost("{id}/vote")]
     public async Task<IActionResult> VoteReview(string id, [FromBody] ReviewVoteDto dto, CancellationToken ct = default)
     {

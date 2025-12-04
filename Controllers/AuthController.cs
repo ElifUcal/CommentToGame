@@ -178,30 +178,59 @@ public async Task<IActionResult> Login([FromBody] LoginDto request)
         return Convert.ToBase64String(bytes);
     }
     
-        [HttpGet("me")]
-        [Authorize]
-        public async Task<IActionResult> Me()
-        {
-            var userName = User.Identity?.Name;
-            if (string.IsNullOrEmpty(userName))
-                return Unauthorized();
+      [HttpGet("me")]
+[Authorize]
+public async Task<IActionResult> Me()
+{
+    var userName = User.Identity?.Name;
+    if (string.IsNullOrEmpty(userName))
+        return Unauthorized();
 
-            var user = await _users.Find(u => u.UserName == userName).FirstOrDefaultAsync();
-            if (user == null)
-                return NotFound();
+    var user = await _users.Find(u => u.UserName == userName).FirstOrDefaultAsync();
+    if (user == null)
+        return NotFound();
 
-            return Ok(new
-            {
-                id = user.Id,   
-                userName = user.UserName,
-                email = user.Email,
-                role = user.UserType.ToString(),
-                userType = (int)user.UserType,
-                country = user.Country,
-                birthdate = user.Birthdate,
-                profileImageUrl = user.ProfileImageUrl
-                
-            });
-        }
+    return Ok(new
+    {
+        id = user.Id,
+        userName = user.UserName,
+        email = user.Email,
+
+        role = user.UserType.ToString(),
+        userType = (int)user.UserType,
+
+        country = user.Country,
+        city = user.City,
+        birthdate = user.Birthdate,
+        createdat = user.Createdat,
+
+        profileImageUrl = user.ProfileImageUrl,
+        bannerUrl = user.BannerUrl,
+
+        about = user.About,
+
+        platforms = user.Platforms,
+        badge = user.Badge,
+        title = user.Title,
+        contactUrl = user.ContactUrl,
+        skills = user.Skills,
+
+        experiences = user.Experiences,
+        projects = user.Projects,
+        educations = user.Educations,
+        awards = user.Awards,
+
+        favoriteGenres = user.FavoriteGenres,
+        name = user.Name,
+        surname = user.Surname,
+
+        favConsoles = user.FavConsoles,
+
+        equipment = user.Equipment,
+
+        
+    });
+}
+
 
 }

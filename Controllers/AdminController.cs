@@ -48,16 +48,9 @@ public class AdminController : ControllerBase
 
     // ---------------- Dashboard / Raporlar ----------------
 
-    [HttpGet("dashboard")]
-    [Authorize(Roles = "Admin")]
-    public IActionResult Dashboard()
-    {
-        _ = _logger.InfoAsync(SystemLogCategory.System, "Admin dashboard viewed", User?.Identity?.Name ?? "unknown");
-        return Ok("Admin panel verisi 🔐");
-    }
 
     [HttpGet("usergamecount")]
-    [Authorize] // istersen Roles="Admin"
+    [Authorize(Roles = "Admin")] // istersen Roles="Admin"
     public async Task<IActionResult> UserGameCount([FromQuery] int windowDays = 7, CancellationToken ct = default)
     {
         if (windowDays <= 0) windowDays = 7;
@@ -96,7 +89,7 @@ public class AdminController : ControllerBase
     /// Dönüş: [{ date: 'yyyy-MM-dd', users: n, games: n }]
     /// </summary>
     [HttpGet("growth")]
-    [Authorize] // istersen Roles="Admin"
+    [Authorize(Roles = "Admin")] // istersen Roles="Admin"
     public async Task<IActionResult> Growth([FromQuery] string from, [FromQuery] string to, [FromQuery] string? mode = "cumulative", CancellationToken ct = default)
     {
         if (!TryParseDay(from, out var fromDay) || !TryParseDay(to, out var toDay))

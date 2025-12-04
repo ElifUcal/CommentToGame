@@ -62,11 +62,9 @@ builder.Services
     });
 
 builder.Services.AddHttpClient<IRawgClient, RawgClient>();
-builder.Services.AddSingleton<RawgImportService>();
 builder.Services.AddHttpClient();
 builder.Services.AddSingleton<IgdbAuthService>();
 builder.Services.AddSingleton<IIgdbClient, IgdbClient>();
-builder.Services.AddSingleton<IgdbImportService>();
 builder.Services.AddSingleton<GameEditService>();
 builder.Services.AddScoped<SearchService>();
 // 🔹 Logging ayarları (ekle)
@@ -167,6 +165,6 @@ using (var scope = app.Services.CreateScope())
     var mongo = scope.ServiceProvider.GetRequiredService<MongoDbService>();
     await CommentToGame.Infrastructure.MongoIndexBootstrapper.CreateAsync(mongo);
 }
-
+app.UseStaticFiles();
 app.MapControllers();
 app.Run();

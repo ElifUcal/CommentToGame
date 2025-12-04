@@ -52,14 +52,5 @@ public async Task<IActionResult> Search(
 }
 
 
-
-        // (opsiyonel) tek oyun detayı – DBye yazmaz
-        // GET /api/rawg/detail/3498
-        [HttpGet("detail/{id:int}")]
-        public async Task<IActionResult> Detail([FromRoute] int id)
-        {
-            var d = await _rawg.GetGameDetailAsync(id);
-            return d is null ? NotFound() : Ok(d);
-        }
     }
 }

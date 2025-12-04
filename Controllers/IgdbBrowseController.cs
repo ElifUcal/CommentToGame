@@ -49,12 +49,6 @@ public async Task<IActionResult> Search(
 
 
 
-        // GET /api/igdb/detail/12345 (DBye yazmaz)
-        [HttpGet("detail/{id:long}")]
-        public async Task<IActionResult> Detail([FromRoute] long id, CancellationToken ct = default)
-        {
-            var d = await _igdb.GetGameDetailAsync(id, ct);
-            return d is null ? NotFound() : Ok(d);
-        }
+  
     }
 }

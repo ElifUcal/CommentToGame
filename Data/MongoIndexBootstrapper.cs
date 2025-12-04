@@ -20,7 +20,9 @@ public static class MongoIndexBootstrapper
         var companies    = db.GetCollection<Company>("Companies");
         var timeToBeat   = db.GetCollection<Time_To_Beat>("TimeToBeat");
         var users        = db.GetCollection<User>("User");
-        var reviews      = db.GetCollection<Reviews>("Reviews");   
+        var reviews      = db.GetCollection<Reviews>("reviews");
+        var reviewVotes    = db.GetCollection<ReviewVote>("review_votes");
+        var reviewReplies  = db.GetCollection<ReviewReply>("review_replies");
 
         // Case-insensitive unique için collation (EN, strength: Secondary)
         var ci = new Collation("en", strength: CollationStrength.Secondary);
@@ -131,7 +133,25 @@ public static class MongoIndexBootstrapper
                 .Descending(x => x.TodayDate),
             new CreateIndexOptions { Name = "ix_reviews_gameid_createdat" }
         )
+    ),
+
+    reviewVotes.Indexes.CreateOneAsync(
+    new CreateIndexModel<ReviewVote>(
+        Builders<ReviewVote>.IndexKeys
+            .Ascending(x => x.ReviewId)
+            .Ascending(x => x.UserId)
+            .Ascending(x => x.Value),
+        new CreateIndexOptions { Name = "ix_reviewvotes_review_user_value" }
     )
+),
+
+// --- REVIEW_REPLIES (lookup performansı) ---
+reviewReplies.Indexes.CreateOneAsync(
+    new CreateIndexModel<ReviewReply>(
+        Builders<ReviewReply>.IndexKeys.Ascending(x => x.ReviewId),
+        new CreateIndexOptions { Name = "ix_reviewreplies_reviewid" }
+    )
+),
 
         
         };

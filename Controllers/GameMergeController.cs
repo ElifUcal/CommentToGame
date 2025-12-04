@@ -14,9 +14,6 @@
     using CommentToGame.DTOs;
     using CommentToGame.Models;
 
-    // IGDB nested tiplerini kısayla kullanmak için:
-    using static CommentToGame.DTOs.IGdbDto;
-    using Microsoft.Win32.SafeHandles;
 
     namespace CommentToGame.Controllers
     {
@@ -179,137 +176,7 @@ private static List<TrailerDto> MergeDistinctTrailers(IEnumerable<TrailerDto> a,
 }
 
 
-            /// POST /api/merge/import
-            [HttpPost("import")]
-            public async Task<IActionResult> Import([FromBody] ImportRequest req, CancellationToken ct = default)
-            {
-                if (req is null) return BadRequest(new { message = "Body gerekli." });
-
-                // ------------ 1) MANUAL ------------
-                if (req.IgdbId is null && req.RawgId is null)
-                {
-                    if (string.IsNullOrWhiteSpace(req.Title))
-                        return BadRequest(new { message = "Manual eklemede Title zorunlu." });
-
-                    var game = new Game
-                    {
-                        Id = ObjectId.GenerateNewId().ToString(),
-                        Game_Name = req.Title!.Trim(),
-                        Release_Date = req.ReleaseDate,
-                        Studio = req.Developer,
-                        Main_image_URL = req.CoverUrl,
-                        Createdat = DateTime.UtcNow
-                    };
-                    await _games.InsertOneAsync(game, cancellationToken: ct);
-
-                    var det = new Game_Details
-                    {
-                        Id = ObjectId.GenerateNewId().ToString(),
-                        GameId = game.Id,
-                        Developer = req.Developer,
-                        Story = req.Story,
-                        GenreIds = null,
-                        PlatformIds = null
-                    };
-                    await _gameDetails.InsertOneAsync(det, cancellationToken: ct);
-
-                    return Ok(new
-                    {
-                        id = game.Id,
-                        cover = game.Main_image_URL,
-                        title = game.Game_Name,
-                        release = game.Release_Date,
-                        developer = det.Developer ?? game.Studio,
-                        genres = (IEnumerable<string>) (req.Genres ?? Array.Empty<string>()),
-                        platforms = (IEnumerable<string>) (req.Platforms ?? Array.Empty<string>()),
-                        story = det.Story
-                    });
-                }
-
-                // ------------ 2) RAWG/IGDB (merge) ------------
-                IgdbGameDetail? igdbGame = null;
-                IgdbTimeToBeat? ttb = null;
-                RawgGameDetail? rawgGame = null;
-
-                if (req.IgdbId is long igdbId && igdbId > 0)
-                {
-                    igdbGame = await _igdb.GetGameDetailAsync(igdbId, ct);
-                    if (igdbGame is not null)
-                        ttb = await _igdb.GetTimeToBeatAsync(igdbId, ct);
-                }
-
-                if (req.RawgId is int rawgId && rawgId > 0)
-                {
-                    rawgGame = await _rawg.GetGameDetailAsync(rawgId);
-                }
-
-                if (igdbGame is null && rawgGame is null)
-                    return BadRequest(new { message = "Geçerli igdbId/rawgId bulunamadı." });
-
-                // store links + team
-                var storeLinks = new List<StoreLink>();
-                if (rawgGame is not null)
-                {
-                    var stores = await _rawg.GetGameStoresAsync(rawgGame.Id);
-                    storeLinks = MapRawgStoresToLinks(stores);
-                }
-
-                var team = rawgGame is not null ? await _rawg.GetGameDevelopmentTeamAsync(rawgGame.Id) : null;
-                var (cast, crew) = SplitCastCrew(team);
-
-                var merged = GameMerge.Merge(igdbGame, rawgGame, ttb, storeLinks, cast, crew);
-
-                // ---- DB'ye yaz ----
-                var gameDoc = new Game
-                {
-                    Id = ObjectId.GenerateNewId().ToString(),
-                    Game_Name = merged.Name ?? rawgGame?.Name ?? igdbGame?.Name ?? "Untitled",
-                    Release_Date = merged.ReleaseDate,
-                    Main_image_URL = merged.MainImage,
-                    Studio = merged.Developer ?? merged.Publisher,
-                    Createdat = DateTime.UtcNow,
-                    GgDb_Rating = merged.GgDbRating,
-                    Metacritic_Rating = merged.Metacritic,
-                    Cast = cast,
-                    Crew = crew
-                };
-                await _games.InsertOneAsync(gameDoc, cancellationToken: ct);
-
-                var detDoc = new Game_Details
-                {
-                    Id = ObjectId.GenerateNewId().ToString(),
-                    GameId = gameDoc.Id,
-                    Developer = merged.Developer ?? gameDoc.Studio,
-                    Publisher = merged.Publisher,
-                    Story = merged.About,
-                    // Id tabanlı eşleşme henüz yok → GenreIds/PlatformIds boş bırakılıyor.
-                    GenreIds = null,
-                    PlatformIds = null,
-                    // Store linkleri ve DLC'ler bu modelde:
-                    Store_Links = storeLinks ?? new List<StoreLink>(),
-                    DLCs = (merged.Dlcs ?? new List<GameMerge.DlcItemDto>())
-                    .Select(d => new DLCitem
-                    {
-                        Name = d.Name,
-                        Price = null // her zaman boş kalsın (sen sonra dolduracaksın)
-                    })
-                    .ToList()
-                };
-                await _gameDetails.InsertOneAsync(detDoc, cancellationToken: ct);
-
-                // Frontend liste kartı şekli
-                return Ok(new
-                {
-                    id = gameDoc.Id,
-                    cover = gameDoc.Main_image_URL,
-                    title = gameDoc.Game_Name,
-                    release = gameDoc.Release_Date,
-                    developer = detDoc.Developer ?? gameDoc.Studio,
-                    genres = merged.Genres ?? Enumerable.Empty<string>(),
-                    platforms = merged.Platforms ?? Enumerable.Empty<string>(),
-                    story = detDoc.Story
-                });
-            }
+            
 
             // ====== Helpers ======
 

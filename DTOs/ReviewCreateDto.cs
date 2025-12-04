@@ -8,7 +8,6 @@ namespace CommentToGame.DTOs
     public class ReviewCreateDto
     {
         public required string GameId { get; set; }
-        public required string UserId { get; set; }
         public int StarCount { get; set; }
         public string? Comment { get; set; }
         public bool IsSpoiler { get; set; }
