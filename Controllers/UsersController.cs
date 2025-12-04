@@ -728,6 +728,97 @@ public async Task<ActionResult<UserGamingStatsDto>> GetUserGamingStats(
 }
 
 
+[HttpGet("{id:length(24)}/awards")]
+public async Task<ActionResult<UserAwardsDto>> GetUserAwards(
+    string id,
+    CancellationToken ct = default)
+{
+    if (!MongoDB.Bson.ObjectId.TryParse(id, out _))
+        return BadRequest("Geçersiz id.");
+
+    var exists = await _users.Find(u => u.Id == id).AnyAsync(ct);
+    if (!exists)
+        return NotFound("Kullanıcı bulunamadı.");
+
+    // 1) Kullanıcının tüm progress kayıtlarını çek
+    var progressList = await _gameProgresses
+        .Find(p => p.UserId == id && p.Progress != null && p.Progress > 0)
+        .ToListAsync(ct);
+
+    // Hiç progress yoksa direkt boş dön
+    if (!progressList.Any())
+    {
+        return Ok(new UserAwardsDto
+        {
+            GamesPlayedCount = 0,
+            CompletedGamesCount = 0,
+            CompletionRatePercent = 0,
+            ReviewedGamesCount = 0,
+            ReviewApprovalRatePercent = 0
+        });
+    }
+
+    // 2) Her oyun için EN SON progress değerini al
+    var lastProgressPerGame = progressList
+        .Where(p => !string.IsNullOrEmpty(p.GameId))
+        .GroupBy(p => p.GameId!)
+        .Select(g =>
+        {
+            var last = g.OrderByDescending(x => x.CreatedAt).First();
+            return new
+            {
+                GameId = g.Key,
+                Progress = last.Progress ?? 0
+            };
+        })
+        .ToList();
+
+    // 3) Games Played = progress >= 30
+    var playedGameIds = lastProgressPerGame
+        .Where(x => x.Progress >= 30)
+        .Select(x => x.GameId)
+        .ToList();
+
+    var gamesPlayedCount = playedGameIds.Count;
+
+    // 4) Completed = progress >= 80
+    var completedGamesCount = lastProgressPerGame.Count(x => x.Progress >= 80);
+
+    double completionRatePercent = 0;
+    if (gamesPlayedCount > 0)
+    {
+        completionRatePercent = (double)completedGamesCount / gamesPlayedCount * 100.0;
+    }
+
+    // 5) Review Approval Rate:
+    //    GamesPlayed oyunlarından kaç tanesine review yazılmış?
+    var reviewedGameIds = await _reviews
+        .Find(r => r.UserId == id && playedGameIds.Contains(r.GameId))
+        .Project(r => r.GameId)
+        .ToListAsync(ct);
+
+    var reviewedGamesCount = reviewedGameIds
+        .Where(gid => !string.IsNullOrEmpty(gid))
+        .Distinct()
+        .Count();
+
+    double reviewApprovalRatePercent = 0;
+    if (gamesPlayedCount > 0)
+    {
+        reviewApprovalRatePercent = (double)reviewedGamesCount / gamesPlayedCount * 100.0;
+    }
+
+    var dto = new UserAwardsDto
+    {
+        GamesPlayedCount = gamesPlayedCount,
+        CompletedGamesCount = completedGamesCount,
+        CompletionRatePercent = Math.Round(completionRatePercent, 1),
+        ReviewedGamesCount = reviewedGamesCount,
+        ReviewApprovalRatePercent = Math.Round(reviewApprovalRatePercent, 1)
+    };
+
+    return Ok(dto);
+}
 
 
 private static string? GetUserIdFromClaims(ClaimsPrincipal user) =>

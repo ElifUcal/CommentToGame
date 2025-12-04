@@ -180,16 +180,25 @@ public async Task<IActionResult> Login([FromBody] LoginDto request)
     
       [HttpGet("me")]
 [Authorize]
-public async Task<IActionResult> Me()
+public async Task<IActionResult> Me(CancellationToken ct)
 {
-    var userName = User.Identity?.Name;
-    if (string.IsNullOrEmpty(userName))
+    // 1) Token'dan stabil userId oku
+    var userId = User.FindFirst("id")?.Value
+                 ?? User.FindFirstValue(ClaimTypes.NameIdentifier)
+                 ?? User.FindFirstValue("sub");
+
+    if (string.IsNullOrEmpty(userId))
         return Unauthorized();
 
-    var user = await _users.Find(u => u.UserName == userName).FirstOrDefaultAsync();
+    // 2) Artık username değil, ID'ye göre user çek
+    var user = await _users
+        .Find(u => u.Id == userId)
+        .FirstOrDefaultAsync(ct);
+
     if (user == null)
         return NotFound();
 
+    // 3) Projection aynı kalabilir
     return Ok(new
     {
         id = user.Id,
@@ -225,12 +234,10 @@ public async Task<IActionResult> Me()
         surname = user.Surname,
 
         favConsoles = user.FavConsoles,
-
         equipment = user.Equipment,
-
-        
     });
 }
+
 
 
 }
