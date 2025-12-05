@@ -24,6 +24,8 @@ public static class MongoIndexBootstrapper
         var reviewVotes    = db.GetCollection<ReviewVote>("review_votes");
         var reviewReplies  = db.GetCollection<ReviewReply>("review_replies");
 
+        var xpTransactions = db.GetCollection<XpTransaction>("xp_transactions");
+
         // Case-insensitive unique için collation (EN, strength: Secondary)
         var ci = new Collation("en", strength: CollationStrength.Secondary);
 
@@ -154,6 +156,25 @@ reviewReplies.Indexes.CreateOneAsync(
 ),
 
         
+        // --- ✅ XP TRANSACTIONS INDEXES ---
+            xpTransactions.Indexes.CreateOneAsync(
+                new CreateIndexModel<XpTransaction>(
+                    Builders<XpTransaction>.IndexKeys.Ascending(x => x.UserId),
+                    new CreateIndexOptions { Name = "ix_xp_userid" }
+                )
+            ),
+
+            xpTransactions.Indexes.CreateOneAsync(
+                new CreateIndexModel<XpTransaction>(
+                    Builders<XpTransaction>.IndexKeys.Ascending(x => x.UniqueKey),
+                    new CreateIndexOptions
+                    {
+                        Name   = "ux_xp_uniquekey",
+                        Unique = true,
+                        Sparse = true   // UniqueKey null olmayanlar için unique
+                    }
+                )
+            ),
         };
         
 

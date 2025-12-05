@@ -1,6 +1,5 @@
 using CommentToGame.Data; // Senin MongoDbService’inin namespace'ini buraya göre düzelt
 using CommentToGame.Models; // gerekirse değiştir
-using CommentToGame.Models;
 using CommentToGame.Dtos;
 using Microsoft.AspNetCore.SignalR;
 using MongoDB.Driver;

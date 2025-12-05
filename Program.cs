@@ -22,6 +22,7 @@ builder.Services.AddSignalR();
 builder.Services.AddSingleton<MongoDbService>();
 builder.Services.AddSingleton<PreviewImportService>();
 builder.Services.AddSingleton<SettingsRepository>();
+builder.Services.AddSingleton<IGamificationService, GamificationService>();
 builder.Services.AddScoped<INotificationService, NotificationService>();
 
 // JWT

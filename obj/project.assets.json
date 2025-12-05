@@ -5320,11 +5320,11 @@
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "C:\\Users\\Hamza Enes\\OneDrive\\Masaüstü\\GGDBsonv2\\commenttogame\\CommentToGame.csproj",
+      "projectUniqueName": "C:\\Users\\Hamza Enes\\OneDrive\\Masaüstü\\GGDBsonv2\\CommentToGame\\CommentToGame.csproj",
       "projectName": "CommentToGame",
-      "projectPath": "C:\\Users\\Hamza Enes\\OneDrive\\Masaüstü\\GGDBsonv2\\commenttogame\\CommentToGame.csproj",
+      "projectPath": "C:\\Users\\Hamza Enes\\OneDrive\\Masaüstü\\GGDBsonv2\\CommentToGame\\CommentToGame.csproj",
       "packagesPath": "C:\\Users\\Hamza Enes\\.nuget\\packages\\",
-      "outputPath": "C:\\Users\\Hamza Enes\\OneDrive\\Masaüstü\\GGDBsonv2\\commenttogame\\obj\\",
+      "outputPath": "C:\\Users\\Hamza Enes\\OneDrive\\Masaüstü\\GGDBsonv2\\CommentToGame\\obj\\",
       "projectStyle": "PackageReference",
       "fallbackFolders": [
         "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"

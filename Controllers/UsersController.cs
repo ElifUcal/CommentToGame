@@ -2,6 +2,7 @@ using System.Security.Claims;
 using CommentToGame.Data;
 using CommentToGame.Dtos;
 using CommentToGame.DTOs;
+using CommentToGame.enums;
 using CommentToGame.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -25,8 +26,10 @@ public class UsersController : ControllerBase
     private readonly IMongoCollection<Game_Details> _gameDetails;
     private readonly IMongoCollection<Genre> _genres;
 
+    private readonly IGamificationService _gamification;
+
     
-    public UsersController(MongoDbService db)
+    public UsersController(MongoDbService db, IGamificationService gamification)
     {
         _users = db.GetCollection<User>("User"); // koleksiyon adın neyse
         _gameLikes      = db.GetCollection<GameLike>("game_likes");
@@ -40,6 +43,7 @@ public class UsersController : ControllerBase
         _games          = db.GetCollection<Game>("Games");
         _gameDetails    = db.GetCollection<Game_Details>("GameDetails");
         _genres         = db.GetCollection<Genre>("Genres");
+        _gamification   = gamification;
     }
 
 
@@ -112,7 +116,7 @@ public class UsersController : ControllerBase
     }
 
 
-    [Authorize]
+   [Authorize]
 [HttpPatch("{id:length(24)}")]
 [Consumes("application/json")]
 [Produces("application/json")]
@@ -123,8 +127,6 @@ public async Task<IActionResult> Patch(string id, [FromBody] UpdateUserDto dto, 
 
     if (dto is null)
         return BadRequest("Body boş veya Content-Type hatalı. Lütfen application/json gönderin.");
-
-        
 
     var requesterId = GetUserIdFromClaims(User);
     var isAdmin = User.IsInRole("Admin");
@@ -138,77 +140,160 @@ public async Task<IActionResult> Patch(string id, [FromBody] UpdateUserDto dto, 
     var existing = await _users.Find(u => u.Id == id).FirstOrDefaultAsync(ct);
     if (existing == null) return NotFound();
 
+    // --- XP için eski durum flag'leri (önceki state) ---
+    var hadProfileImage = !string.IsNullOrEmpty(existing.ProfileImageUrl);
+    var hadAbout        = !string.IsNullOrWhiteSpace(existing.About);
+    var hadLocation     = !string.IsNullOrWhiteSpace(existing.Country)
+                          && !string.IsNullOrWhiteSpace(existing.City);
+    var hadGenres       = existing.FavoriteGenres != null && existing.FavoriteGenres.Any();
+    var hadPlatforms    = existing.Platforms != null && existing.Platforms.Any();
+
     var b = Builders<User>.Update;
     var updates = new List<UpdateDefinition<User>>();
 
+    // --- Email kontrolü ---
     if (dto.Email != null)
-{
-    var newEmail = dto.Email.Trim().ToLowerInvariant();
+    {
+        var newEmail = dto.Email.Trim().ToLowerInvariant();
 
-    // Bu email başka bir kullanıcıda var mı?
-    var exists = await _users.Find(u => u.Email == newEmail && u.Id != id)
-                             .AnyAsync(ct);
+        var existsEmail = await _users.Find(u => u.Email == newEmail && u.Id != id)
+                                      .AnyAsync(ct);
 
-    if (exists)
-        return BadRequest("Bu email başka bir kullanıcı tarafından kullanılıyor.");
+        if (existsEmail)
+            return BadRequest("Bu email başka bir kullanıcı tarafından kullanılıyor.");
 
-    updates.Add(b.Set(x => x.Email, newEmail));
-}
+        updates.Add(b.Set(x => x.Email, newEmail));
+    }
 
-
+    // --- UserName kontrolü ---
     if (dto.UserName != null)
-{
-    var newUserName = dto.UserName.Trim();
+    {
+        var newUserName = dto.UserName.Trim();
 
-    // Başka kullanıcıda aynı username var mı?
-    var exists = await _users
-        .Find(u => u.UserName == newUserName && u.Id != id)
-        .AnyAsync(ct);
+        var existsUserName = await _users
+            .Find(u => u.UserName == newUserName && u.Id != id)
+            .AnyAsync(ct);
 
-    if (exists)
-        return BadRequest("Bu kullanıcı adı başka bir kullanıcı tarafından kullanılıyor.");
+        if (existsUserName)
+            return BadRequest("Bu kullanıcı adı başka bir kullanıcı tarafından kullanılıyor.");
 
-    updates.Add(b.Set(x => x.UserName, newUserName));
-}
+        updates.Add(b.Set(x => x.UserName, newUserName));
+    }
 
-    if (dto.Birthdate.HasValue) updates.Add(b.Set(x => x.Birthdate, dto.Birthdate.Value));
-    if (dto.Country != null) updates.Add(b.Set(x => x.Country, dto.Country));
-    if (dto.City != null) updates.Add(b.Set(x => x.City, dto.City));
-    if (dto.ProfileImageUrl != null) updates.Add(b.Set(x => x.ProfileImageUrl, dto.ProfileImageUrl));
-    if (dto.BannerUrl != null) updates.Add(b.Set(x => x.BannerUrl, dto.BannerUrl));
-    if (dto.About != null) updates.Add(b.Set(x => x.About, dto.About));
-    if (dto.FavoriteGenres != null) updates.Add(b.Set(x => x.FavoriteGenres, dto.FavoriteGenres));
-    if (dto.Platforms != null) updates.Add(b.Set(x => x.Platforms, dto.Platforms));
-    if (dto.Badge != null) updates.Add(b.Set(x => x.Badge, dto.Badge));
-    if (dto.Title != null) updates.Add(b.Set(x => x.Title, dto.Title));
-    if (dto.ContactUrl != null) updates.Add(b.Set(x => x.ContactUrl, dto.ContactUrl));
-    if (dto.Skills != null) updates.Add(b.Set(x => x.Skills, dto.Skills));
-    if (dto.Experiences != null) updates.Add(b.Set(x => x.Experiences, dto.Experiences));
-    if (dto.Projects != null) updates.Add(b.Set(x => x.Projects, dto.Projects));
-    if (dto.Educations != null) updates.Add(b.Set(x => x.Educations, dto.Educations));
-    if (dto.Awards != null) updates.Add(b.Set(x => x.Awards, dto.Awards));
-    if (dto.Name != null) updates.Add(b.Set(x => x.Name, dto.Name));
-    if (dto.Surname != null) updates.Add(b.Set(x => x.Surname, dto.Surname));
-    if (dto.FavConsoles != null) updates.Add(b.Set(x => x.FavConsoles, dto.FavConsoles));
-    if (dto.Equipment != null) updates.Add(b.Set(x => x.Equipment, dto.Equipment));
-    if (dto.CareerGoal != null) updates.Add(b.Set(x => x.CareerGoal, dto.CareerGoal));
-
-
-    // yalnızca Admin değiştirebilsin
-    
+    // --- Diğer alanlar ---
+    if (dto.Birthdate.HasValue)       updates.Add(b.Set(x => x.Birthdate, dto.Birthdate.Value));
+    if (dto.Country != null)          updates.Add(b.Set(x => x.Country, dto.Country));
+    if (dto.City != null)             updates.Add(b.Set(x => x.City, dto.City));
+    if (dto.ProfileImageUrl != null)  updates.Add(b.Set(x => x.ProfileImageUrl, dto.ProfileImageUrl));
+    if (dto.BannerUrl != null)        updates.Add(b.Set(x => x.BannerUrl, dto.BannerUrl));
+    if (dto.About != null)            updates.Add(b.Set(x => x.About, dto.About));
+    if (dto.FavoriteGenres != null)   updates.Add(b.Set(x => x.FavoriteGenres, dto.FavoriteGenres));
+    if (dto.Platforms != null)        updates.Add(b.Set(x => x.Platforms, dto.Platforms));
+    if (dto.Badge != null)            updates.Add(b.Set(x => x.Badge, dto.Badge));
+    if (dto.Title != null)            updates.Add(b.Set(x => x.Title, dto.Title));
+    if (dto.ContactUrl != null)       updates.Add(b.Set(x => x.ContactUrl, dto.ContactUrl));
+    if (dto.Skills != null)           updates.Add(b.Set(x => x.Skills, dto.Skills));
+    if (dto.Experiences != null)      updates.Add(b.Set(x => x.Experiences, dto.Experiences));
+    if (dto.Projects != null)         updates.Add(b.Set(x => x.Projects, dto.Projects));
+    if (dto.Educations != null)       updates.Add(b.Set(x => x.Educations, dto.Educations));
+    if (dto.Awards != null)           updates.Add(b.Set(x => x.Awards, dto.Awards));
+    if (dto.Name != null)             updates.Add(b.Set(x => x.Name, dto.Name));
+    if (dto.Surname != null)          updates.Add(b.Set(x => x.Surname, dto.Surname));
+    if (dto.FavConsoles != null)      updates.Add(b.Set(x => x.FavConsoles, dto.FavConsoles));
+    if (dto.Equipment != null)        updates.Add(b.Set(x => x.Equipment, dto.Equipment));
+    if (dto.CareerGoal != null)       updates.Add(b.Set(x => x.CareerGoal, dto.CareerGoal));
 
     if (updates.Count == 0)
         return BadRequest("Güncellenecek bir alan gönderilmedi.");
 
+    // --- DB update ---
     var res = await _users.UpdateOneAsync(x => x.Id == id, b.Combine(updates), cancellationToken: ct);
     if (res.MatchedCount == 0) return NotFound();
+
+    // Eğer hiçbir şey değişmemişse XP de verme
+    if (res.ModifiedCount == 0)
+        return Ok();
+
+    // --- XP için yeni state'i dto üzerinden kontrol et (SIRALI, PARALLEL DEĞİL!) ---
+
+    // 1) Profil fotoğrafı (ilk kez doluyorsa)
+    var willHaveProfileImage =
+        dto.ProfileImageUrl != null && !string.IsNullOrWhiteSpace(dto.ProfileImageUrl);
+
+    if (!hadProfileImage && willHaveProfileImage)
+    {
+        await _gamification.AddXpAsync(
+            userId: id,
+            sourceType: XpSourceType.ProfileAvatarUploaded,
+            sourceId: null,
+            uniqueKey: $"user:{id}:profile-avatar"
+        );
+    }
+
+    // 2) About/Bio (ilk kez doluyorsa)
+    var willHaveAbout =
+        dto.About != null && !string.IsNullOrWhiteSpace(dto.About);
+
+    if (!hadAbout && willHaveAbout)
+    {
+        await _gamification.AddXpAsync(
+            userId: id,
+            sourceType: XpSourceType.ProfileBioCompleted,
+            sourceId: null,
+            uniqueKey: $"user:{id}:profile-bio"
+        );
+    }
+
+    // 3) Location (ülke/şehir ilk kez set edilirse)
+    var willHaveLocation =
+        (!string.IsNullOrWhiteSpace(dto.Country) || !string.IsNullOrWhiteSpace(dto.City));
+
+    if (!hadLocation && willHaveLocation)
+    {
+        await _gamification.AddXpAsync(
+            userId: id,
+            sourceType: XpSourceType.ProfileLocationCompleted,
+            sourceId: null,
+            uniqueKey: $"user:{id}:profile-location"
+        );
+    }
+
+    // 4) Favori türler (ilk kez doluyorsa)
+    var willHaveGenres =
+        dto.FavoriteGenres != null && dto.FavoriteGenres.Any();
+
+    if (!hadGenres && willHaveGenres)
+    {
+        await _gamification.AddXpAsync(
+            userId: id,
+            sourceType: XpSourceType.ProfileFavoriteGenresCompleted,
+            sourceId: null,
+            uniqueKey: $"user:{id}:profile-genres"
+        );
+    }
+
+    // 5) Platformlar (ilk kez doluyorsa)
+    var willHavePlatforms =
+        dto.Platforms != null && dto.Platforms.Any();
+
+    if (!hadPlatforms && willHavePlatforms)
+    {
+        await _gamification.AddXpAsync(
+            userId: id,
+            sourceType: XpSourceType.ProfilePlatformsCompleted,
+            sourceId: null,
+            uniqueKey: $"user:{id}:profile-platforms"
+        );
+    }
 
     return Ok();
 }
 
+
+
 [Authorize]
 [HttpPost("{id:length(24)}/profile-image")]
-[RequestSizeLimit(2 * 1024 * 1024)] // max 5 MB
+[RequestSizeLimit(2 * 1024 * 1024)] // max 2 MB
 public async Task<IActionResult> UploadProfileImage(
     string id,
     IFormFile file,
@@ -252,13 +337,22 @@ public async Task<IActionResult> UploadProfileImage(
     }
 
     var baseUrl = $"{Request.Scheme}://{Request.Host}";
-    var url = $"{baseUrl}/uploads/profiles/{fileName}"; // 🔥 BURASI ÖNEMLİ
+    var url = $"{baseUrl}/uploads/profiles/{fileName}";
 
     var update = Builders<User>.Update.Set(x => x.ProfileImageUrl, url);
     await _users.UpdateOneAsync(u => u.Id == id, update, cancellationToken: ct);
 
+    // XP: profil fotoğrafı ilk kez yükleniyorsa verilecek (uniqueKey bunu garanti ediyor)
+    await _gamification.AddXpAsync(
+        userId: id,
+        sourceType: XpSourceType.ProfileAvatarUploaded,
+        sourceId: null,
+        uniqueKey: $"user:{id}:profile-avatar"
+    );
+
     return Ok(new { profileImageUrl = url });
 }
+
 
 
 [HttpGet("{id:length(24)}/activity")]
@@ -818,6 +912,23 @@ public async Task<ActionResult<UserAwardsDto>> GetUserAwards(
     };
 
     return Ok(dto);
+}
+
+
+[HttpGet("{id:length(24)}/gamification-summary")]
+public async Task<ActionResult<UserGamificationSummaryDto>> GetGamificationSummary(
+    string id,
+    CancellationToken ct = default)
+{
+    if (!MongoDB.Bson.ObjectId.TryParse(id, out _))
+        return BadRequest("Geçersiz id.");
+
+    var exists = await _users.Find(u => u.Id == id).AnyAsync(ct);
+    if (!exists)
+        return NotFound("Kullanıcı bulunamadı.");
+
+    var summary = await _gamification.GetUserSummaryAsync(id);
+    return Ok(summary);
 }
 
 

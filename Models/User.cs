@@ -79,6 +79,10 @@ public class User
     public Equipment? Equipment { get; set; }
 
     public string? CareerGoal { get; set; }
+
+    public int TotalXp { get; set; } = 0;
+    public int Level { get; set; } = 1;
+    public DateTime? LastLevelUpAt { get; set; }
 }
 
 
